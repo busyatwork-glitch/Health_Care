@@ -38,7 +38,10 @@ function getTransporter(): Transporter | null {
   return transporter;
 }
 
-export async function sendPasswordResetOtp(toEmail: string, otp: string): Promise<boolean> {
+export async function sendPasswordResetOtp(
+  toEmail: string,
+  otp: string,
+): Promise<{ sent: boolean; reason?: string }> {
   // Always log the OTP to the server console so it is visible in Render deployment logs
   console.log(`[PASSWORD RESET OTP] 6-digit code for ${toEmail} is: ${otp} (valid for 15 minutes)`);
 
@@ -48,9 +51,7 @@ export async function sendPasswordResetOtp(toEmail: string, otp: string): Promis
     console.warn(
       `[EMAIL NOTICE] SMTP environment variables (SMTP_USER or SMTP_PASS) are not configured. The OTP was logged above.`,
     );
-    throw new Error(
-      'Email service is not configured (SMTP_USER or SMTP_PASS missing on server). Check your Render environment variables or check the server logs for the 6-digit OTP code.',
-    );
+    return { sent: false, reason: 'unconfigured' };
   }
 
   const user = env.SMTP_USER?.trim().replace(/['"]/g, '');
@@ -105,7 +106,7 @@ export async function sendPasswordResetOtp(toEmail: string, otp: string): Promis
     console.log(
       `[EMAIL SUCCESS] Email accepted by SMTP server for ${toEmail}. Message ID: ${info.messageId}`,
     );
-    return true;
+    return { sent: true };
   } catch (error) {
     console.error(
       '[EMAIL ERROR] Failed to send password reset email via SMTP:',

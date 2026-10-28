@@ -91,7 +91,9 @@ export async function chat(message: string, conversationId?: string): Promise<Ch
     body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
   });
 }
-export async function forgotPassword(email: string): Promise<{ ok: boolean; message: string }> {
+export async function forgotPassword(
+  email: string,
+): Promise<{ ok: boolean; message: string; otp?: string }> {
   return request('/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify({ email }),

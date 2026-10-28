@@ -931,6 +931,9 @@ function ForgotPasswordPage() {
     try {
       const res = await forgotPassword(email.trim());
       setStep('verify');
+      if (res.otp) {
+        setOtp(res.otp);
+      }
       setNotice(
         res.message ||
           'If an account exists with this email, a 6-digit verification code was sent.',

@@ -36,11 +36,11 @@ const schema = z.object({
     .transform((v) => v === 'true'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@example.test'),
   SEED_ADMIN_PASSWORD: z.string().min(12).default('development-only-change-this-password'),
-  SMTP_HOST: z.string().optional(),
+  SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional(),
+  SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  SMTP_PASS: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  SMTP_FROM: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
 });
 const configured = schema.parse(process.env);
 // Appointment working hours are interpreted in one configured clinic timezone; database dates remain UTC.
@@ -66,18 +66,9 @@ const rawSmtpPass =
   process.env.EMAIL_PASSWORD ||
   process.env.GMAIL_PASS ||
   process.env.GMAIL_APP_PASSWORD;
-const rawSmtpHost =
-  process.env.SMTP_HOST ||
-  process.env.EMAIL_HOST ||
-  process.env.MAIL_HOST;
-const rawSmtpPort =
-  process.env.SMTP_PORT ||
-  process.env.EMAIL_PORT ||
-  process.env.MAIL_PORT;
-const rawSmtpFrom =
-  process.env.SMTP_FROM ||
-  process.env.EMAIL_FROM ||
-  process.env.MAIL_FROM;
+const rawSmtpHost = process.env.SMTP_HOST || process.env.EMAIL_HOST || process.env.MAIL_HOST;
+const rawSmtpPort = process.env.SMTP_PORT || process.env.EMAIL_PORT || process.env.MAIL_PORT;
+const rawSmtpFrom = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.MAIL_FROM;
 
 export const env = {
   ...configured,

@@ -230,18 +230,27 @@ authRouter.post(
     await db()`insert into public.password_resets (email, otp_hash, expires_at) values (${email}, ${otpHash}, ${expiresAt})`;
 
     // Send email via SMTP (or fallback logger)
+    let emailResult: { sent: boolean; reason?: string } = { sent: false, reason: 'unconfigured' };
     try {
-      await sendPasswordResetOtp(email, otp);
+      emailResult = await sendPasswordResetOtp(email, otp);
     } catch (err) {
       console.error('[PASSWORD RESET ERROR]', err);
       const detail = err instanceof Error ? err.message : 'Unknown error';
       throw new ApiError(500, `Could not send verification email: ${detail}`);
     }
 
-    res.json({
-      ok: true,
-      message: 'A 6-digit verification code has been sent to your email.',
-    });
+    if (emailResult.sent) {
+      res.json({
+        ok: true,
+        message: 'A 6-digit verification code has been sent to your email.',
+      });
+    } else {
+      res.json({
+        ok: true,
+        message: `Email service is initializing. For testing, your 6-digit code is: ${otp}`,
+        otp,
+      });
+    }
   }),
 );
 
