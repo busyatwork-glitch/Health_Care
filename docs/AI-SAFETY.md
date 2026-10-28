@@ -1,0 +1,11 @@
+# AI safety and limitations
+
+The assistant is an informational feature, not a diagnostic or treatment service. A response cannot establish a diagnosis, replace examination, or claim clinical validation. Gemini calls happen only in the API service. The system prompt prohibits definitive diagnosis, personalized prescription dosing, medication discontinuation advice, and discouraging professional care. Responses are parsed against the shared Zod assessment schema and a narrow unsafe-language check can replace unsafe text.
+
+Before provider calls, a deterministic multi-pattern safeguard checks the recent bounded conversation for descriptions including concerning chest pain, severe breathing difficulty, stroke signs, loss of consciousness, uncontrolled bleeding, ongoing seizures, allergic airway swelling, sudden severe headache, overdose, and immediate self-harm. It returns emergency guidance and does not continue routine questioning. In India it cites 112; emergency coverage is not exhaustive, and keyword checks can miss or over-flag descriptions. A clinician-reviewed triage protocol is required before clinical use.
+
+The model receives at most the last ten turns plus the current message. Model JSON is schema-validated. No Gemini configuration in development produces a clearly marked, non-clinical demo response; missing production AI configuration returns an error instead of pretending a canned answer came from Gemini. Provider requests use a configured timeout and return a clear error on rate limits or malformed output; richer refusal/error telemetry remains an area to strengthen before production.
+
+Automated tests exercise common emergency descriptions, a routine negative case, unsafe-output replacement, and the schema behavior in the service path. These are software safeguards only. They do not establish sensitivity, specificity, safety, or clinical accuracy. The emergency detector is not exhaustive or clinically validated. Emergency messages instruct users to contact emergency services; the application is not an emergency service.
+
+Any AI provider call transmits user content to that provider. Verify current Google contractual/privacy/data retention terms and select an appropriate configuration before sending identifiable health information. Do not use the Gemini free tier with identifiable real patient health content.
