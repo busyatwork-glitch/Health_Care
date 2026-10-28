@@ -54,8 +54,38 @@ const makeSecret = (value: string | undefined, name: string): string => {
   }
   return randomBytes(48).toString('base64url');
 };
+const rawSmtpUser =
+  process.env.SMTP_USER ||
+  process.env.EMAIL_USER ||
+  process.env.GMAIL_USER ||
+  process.env.MAIL_USER;
+const rawSmtpPass =
+  process.env.SMTP_PASS ||
+  process.env.SMTP_PASSWORD ||
+  process.env.EMAIL_PASS ||
+  process.env.EMAIL_PASSWORD ||
+  process.env.GMAIL_PASS ||
+  process.env.GMAIL_APP_PASSWORD;
+const rawSmtpHost =
+  process.env.SMTP_HOST ||
+  process.env.EMAIL_HOST ||
+  process.env.MAIL_HOST;
+const rawSmtpPort =
+  process.env.SMTP_PORT ||
+  process.env.EMAIL_PORT ||
+  process.env.MAIL_PORT;
+const rawSmtpFrom =
+  process.env.SMTP_FROM ||
+  process.env.EMAIL_FROM ||
+  process.env.MAIL_FROM;
+
 export const env = {
   ...configured,
   JWT_SECRET: makeSecret(configured.JWT_SECRET, 'JWT_SECRET'),
   JWT_REFRESH_SECRET: makeSecret(configured.JWT_REFRESH_SECRET, 'JWT_REFRESH_SECRET'),
+  SMTP_USER: configured.SMTP_USER || rawSmtpUser,
+  SMTP_PASS: configured.SMTP_PASS || rawSmtpPass,
+  SMTP_HOST: configured.SMTP_HOST || rawSmtpHost,
+  SMTP_PORT: configured.SMTP_PORT || (rawSmtpPort ? Number(rawSmtpPort) : 465),
+  SMTP_FROM: configured.SMTP_FROM || rawSmtpFrom,
 };

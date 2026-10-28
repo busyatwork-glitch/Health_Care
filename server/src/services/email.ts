@@ -20,6 +20,8 @@ function getTransporter(): Transporter | null {
       transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: { user, pass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
       });
     } else {
       const port = env.SMTP_PORT || 465;
@@ -28,6 +30,8 @@ function getTransporter(): Transporter | null {
         port,
         secure: port === 465,
         auth: { user, pass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
       });
     }
   }
@@ -44,7 +48,9 @@ export async function sendPasswordResetOtp(toEmail: string, otp: string): Promis
     console.warn(
       `[EMAIL NOTICE] SMTP environment variables (SMTP_USER or SMTP_PASS) are not configured. The OTP was logged above.`,
     );
-    return true;
+    throw new Error(
+      'Email service is not configured (SMTP_USER or SMTP_PASS missing on server). Check your Render environment variables or check the server logs for the 6-digit OTP code.',
+    );
   }
 
   const user = env.SMTP_USER?.trim().replace(/['"]/g, '');
