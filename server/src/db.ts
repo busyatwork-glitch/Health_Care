@@ -7,10 +7,24 @@ let connected = false;
 export const database = {
   get connected(): boolean { return connected; },
   async connect(): Promise<void> {
-    if (!env.SUPABASE_DB_URL) throw new Error('SUPABASE_DB_URL is missing. Add the Supabase Postgres connection string to the project-root .env file.');
-    client = postgres(env.SUPABASE_DB_URL, { ssl: 'require', max: 10, connect_timeout: 10, idle_timeout: 20, prepare: false, onnotice: () => undefined });
-    await client`select 1`;
-    connected = true;
+    if (!env.SUPABASE_DB_URL) {
+      console.warn('[DATABASE] SUPABASE_DB_URL is missing. Please set SUPABASE_DB_URL in the Render dashboard under Environment Variables.');
+      connected = false;
+      return;
+    }
+    try {
+      client = postgres(env.SUPABASE_DB_URL, { ssl: 'require', max: 10, connect_timeout: 10, idle_timeout: 20, prepare: false, onnotice: () => undefined });
+      await client`select 1`;
+      connected = true;
+      console.log(JSON.stringify({ level: 'info', event: 'database_connected' }));
+    } catch (error) {
+      connected = false;
+      console.error(JSON.stringify({
+        level: 'error',
+        event: 'database_connection_failed',
+        message: error instanceof Error ? error.message : 'Database connection failed'
+      }));
+    }
   },
   async close(): Promise<void> {
     connected = false;
