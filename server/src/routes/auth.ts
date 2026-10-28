@@ -203,14 +203,20 @@ authRouter.post(
     // Check if user exists and is not suspended
     const [user] =
       await db()`select id, name, suspended from public.users where email = ${email} limit 1`;
-    if (!user || user.suspended) {
-      // Return success to avoid email enumeration
-      res.json({
-        ok: true,
-        message: 'If an account exists with this email, a verification code was sent.',
-      });
-      return;
+    if (!user) {
+      console.warn(
+        `[PASSWORD RESET] Request for ${email} failed: No account found with this email in database.`,
+      );
+      throw new ApiError(
+        404,
+        'No account found with this email address. Please check your spelling or register.',
+      );
     }
+    if (user.suspended) {
+      throw new ApiError(403, 'This account is suspended. Please contact support.');
+    }
+
+    console.log(`[PASSWORD RESET] User account verified for ${email}. Generating OTP...`);
 
     // Generate 6-digit numeric OTP
     const otp = randomInt(100000, 1000000).toString();
@@ -226,13 +232,15 @@ authRouter.post(
     // Send email via SMTP (or fallback logger)
     try {
       await sendPasswordResetOtp(email, otp);
-    } catch {
-      throw new ApiError(500, 'Unable to send password reset email. Please try again later.');
+    } catch (err) {
+      console.error('[PASSWORD RESET ERROR]', err);
+      const detail = err instanceof Error ? err.message : 'Unknown error';
+      throw new ApiError(500, `Could not send verification email: ${detail}`);
     }
 
     res.json({
       ok: true,
-      message: 'If an account exists with this email, a verification code was sent.',
+      message: 'A 6-digit verification code has been sent to your email.',
     });
   }),
 );

@@ -4,35 +4,51 @@ import { env } from '../config/env.js';
 let transporter: Transporter | null = null;
 
 function getTransporter(): Transporter | null {
-  if (!env.SMTP_USER || !env.SMTP_PASS) {
+  const user = env.SMTP_USER?.trim().replace(/['"]/g, '');
+  const pass = env.SMTP_PASS?.trim().replace(/['"\s]/g, '');
+
+  if (!user || !pass) {
     return null;
   }
+
   if (!transporter) {
-    const port = env.SMTP_PORT || 465;
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST || 'smtp.gmail.com',
-      port,
-      secure: port === 465,
-      auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-      },
-    });
+    const isGmail =
+      (env.SMTP_HOST && env.SMTP_HOST.includes('gmail')) ||
+      user.toLowerCase().endsWith('@gmail.com');
+
+    if (isGmail) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user, pass },
+      });
+    } else {
+      const port = env.SMTP_PORT || 465;
+      transporter = nodemailer.createTransport({
+        host: env.SMTP_HOST || 'smtp.gmail.com',
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+      });
+    }
   }
   return transporter;
 }
 
 export async function sendPasswordResetOtp(toEmail: string, otp: string): Promise<boolean> {
+  // Always log the OTP to the server console so it is visible in Render deployment logs
+  console.log(`[PASSWORD RESET OTP] 6-digit code for ${toEmail} is: ${otp} (valid for 15 minutes)`);
+
   const mailer = getTransporter();
 
   if (!mailer) {
     console.warn(
-      `[EMAIL NOTICE] SMTP is not configured. Password reset code for ${toEmail} is: ${otp} (valid for 15 minutes)`,
+      `[EMAIL NOTICE] SMTP environment variables (SMTP_USER or SMTP_PASS) are not configured. The OTP was logged above.`,
     );
     return true;
   }
 
-  const fromAddress = env.SMTP_FROM || `Carekind <${env.SMTP_USER}>`;
+  const user = env.SMTP_USER?.trim().replace(/['"]/g, '');
+  const fromAddress = env.SMTP_FROM || `Carekind <${user}>`;
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -72,13 +88,17 @@ export async function sendPasswordResetOtp(toEmail: string, otp: string): Promis
   const textContent = `Reset your Carekind password\n\nYour 6-digit verification code is: ${otp}\n\nThis code will expire in 15 minutes. If you did not request this, you can ignore this email.`;
 
   try {
-    await mailer.sendMail({
+    console.log(`[EMAIL] Sending password reset email to ${toEmail}...`);
+    const info = await mailer.sendMail({
       from: fromAddress,
       to: toEmail,
       subject: 'Your Carekind Password Reset Code',
       text: textContent,
       html: htmlContent,
     });
+    console.log(
+      `[EMAIL SUCCESS] Email accepted by SMTP server for ${toEmail}. Message ID: ${info.messageId}`,
+    );
     return true;
   } catch (error) {
     console.error(
