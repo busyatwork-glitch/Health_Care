@@ -18,21 +18,31 @@ function getTransporter(): Transporter | null {
 
     if (isGmail) {
       transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // use STARTTLS on 587
+        requireTLS: true,
         auth: { user, pass },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 15000,
-      });
+        family: 4, // force IPv4 to prevent IPv6 DNS timeout in cloud containers
+        tls: {
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2',
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      } as any);
     } else {
-      const port = env.SMTP_PORT || 465;
+      const port = env.SMTP_PORT || 587;
       transporter = nodemailer.createTransport({
         host: env.SMTP_HOST || 'smtp.gmail.com',
         port,
         secure: port === 465,
         auth: { user, pass },
+        family: 4,
         tls: { rejectUnauthorized: false },
-        connectionTimeout: 15000,
-      });
+        connectionTimeout: 10000,
+      } as any);
     }
   }
   return transporter;
