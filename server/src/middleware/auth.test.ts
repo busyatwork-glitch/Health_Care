@@ -5,14 +5,38 @@ import { requireRole } from './auth.js';
 describe('role authorization boundary', () => {
   it('denies a patient access to admin operations', () => {
     const req = { user: { id: 'patient-id', role: 'patient' } } as unknown as Request;
-    const res = { status: vi.fn(), json: vi.fn() }; res.status.mockReturnValue(res);
-    const next = vi.fn(); requireRole('admin')(req, res as unknown as Response, next as unknown as NextFunction);
-    expect(res.status).toHaveBeenCalledWith(403); expect(next).not.toHaveBeenCalled();
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    requireRole('admin')(req, res as unknown as Response, next as unknown as NextFunction);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
   });
   it("continues when the user's role is allowed", () => {
     const req = { user: { id: 'doctor-id', role: 'doctor' } } as unknown as Request;
-    const res = { status: vi.fn(), json: vi.fn() }; res.status.mockReturnValue(res);
-    const next = vi.fn(); requireRole('doctor')(req, res as unknown as Response, next as unknown as NextFunction);
-    expect(next).toHaveBeenCalledOnce(); expect(res.status).not.toHaveBeenCalled();
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    requireRole('doctor')(req, res as unknown as Response, next as unknown as NextFunction);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it('allows a hospital role user to access hospital operations', () => {
+    const req = { user: { id: 'hospital-id', role: 'hospital' } } as unknown as Request;
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    requireRole('hospital')(req, res as unknown as Response, next as unknown as NextFunction);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it('denies non-hospital roles from hospital operations', () => {
+    const req = { user: { id: 'patient-id', role: 'patient' } } as unknown as Request;
+    const res = { status: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    requireRole('hospital')(req, res as unknown as Response, next as unknown as NextFunction);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
   });
 });

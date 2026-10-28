@@ -14,7 +14,7 @@ indexes your real codebase, and serves that context back to cut token waste.
 > ingestion (Claude Code, Claude Desktop, Kiro, Gemini), git-validated kept
 > signals, the metrics dashboard, and the pluggable Postgres/Ollama backends are
 > live. The `/service` watch command arrives in a later phase. Do not claim a
-> command ran when it is marked *Planned*; say it is not available yet.
+> command ran when it is marked _Planned_; say it is not available yet.
 
 ## Operating Rules (read before any sub-command)
 
@@ -41,27 +41,27 @@ indexes your real codebase, and serves that context back to cut token waste.
 ## On Invocation
 
 Determine the sub-command from the user's message and route to the matching
-section. If the command is marked *Planned*, tell the user it is not implemented
+section. If the command is marked _Planned_, tell the user it is not implemented
 yet and point to what foundation provides (config + on-disk contract).
 
 ## Command surface
 
-| Command | Status | Purpose |
-|---------|--------|---------|
-| `/learn` | Implemented (core-loop) | Sweep discovered sessions, distill kept-vs-discarded learnings, write stores. Also enriches the **Knowledge Graph**: consensus decisions, mined successful workflow patterns, and review findings are recorded as durable, deduped KG thoughts (kind `decision`/`finding`). Args: `--last N` (limit to the most recent N sessions), `--focus "area"` (bias distillation toward a topic). Output: counts of sessions swept and learnings written. |
-| `/index-code` | Implemented (core-loop) | Chunk + embed the workspace codebase into the vector store. Args: `--force` (re-index everything, ignoring the last-index watermark). Output: files indexed and chunk count. |
-| `/retrieve` | Implemented (core-loop) | Retrieve the most relevant code/learning chunks for a query. Usage: `/retrieve <query>`. Output: the top matching chunks with their source paths. |
-| `/search` | Implemented (core-loop) | Semantic search over distilled learnings. Usage: `/search <query> [--limit N]` (cap results at N). Output: ranked learnings with scores. |
-| `/sources` | Implemented (universal-ingestion) | List every discovered session source, its tier, availability, and enabled state; opt-in/disable third-party sources (consent-gated). Discovers Claude Code, Claude Desktop, Kiro, Gemini + AutoClaw-native. |
-| `/scaffold` | Implemented (signal-and-rag) | Emit your learned `agent-style.md` (optionally `--focus "area"`) to prepend to a new agent task. Copied to the clipboard. |
-| `/rag-generate` | Implemented (signal-and-rag) | Build a grounded RAG prompt for a task from retrieved code + learnings + style + memory. Degrades gracefully without a vector backend. Copied to the clipboard. |
-| `/metrics` | Implemented (metrics-dashboard) | Show learning-run counts, kept-rate, and token usage (real vs estimated). A live dashboard view is available under the AutoClaw activity-bar container. |
-| `/service` | Planned (automation-reach) | Run the continuous watch service that ingests new sessions as they land. |
+| Command         | Status                            | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/learn`        | Implemented (core-loop)           | Sweep discovered sessions, distill kept-vs-discarded learnings, write stores. Also enriches the **Knowledge Graph**: consensus decisions, mined successful workflow patterns, and review findings are recorded as durable, deduped KG thoughts (kind `decision`/`finding`). Args: `--last N` (limit to the most recent N sessions), `--focus "area"` (bias distillation toward a topic). Output: counts of sessions swept and learnings written. |
+| `/index-code`   | Implemented (core-loop)           | Chunk + embed the workspace codebase into the vector store. Args: `--force` (re-index everything, ignoring the last-index watermark). Output: files indexed and chunk count.                                                                                                                                                                                                                                                                     |
+| `/retrieve`     | Implemented (core-loop)           | Retrieve the most relevant code/learning chunks for a query. Usage: `/retrieve <query>`. Output: the top matching chunks with their source paths.                                                                                                                                                                                                                                                                                                |
+| `/search`       | Implemented (core-loop)           | Semantic search over distilled learnings. Usage: `/search <query> [--limit N]` (cap results at N). Output: ranked learnings with scores.                                                                                                                                                                                                                                                                                                         |
+| `/sources`      | Implemented (universal-ingestion) | List every discovered session source, its tier, availability, and enabled state; opt-in/disable third-party sources (consent-gated). Discovers Claude Code, Claude Desktop, Kiro, Gemini + AutoClaw-native.                                                                                                                                                                                                                                      |
+| `/scaffold`     | Implemented (signal-and-rag)      | Emit your learned `agent-style.md` (optionally `--focus "area"`) to prepend to a new agent task. Copied to the clipboard.                                                                                                                                                                                                                                                                                                                        |
+| `/rag-generate` | Implemented (signal-and-rag)      | Build a grounded RAG prompt for a task from retrieved code + learnings + style + memory. Degrades gracefully without a vector backend. Copied to the clipboard.                                                                                                                                                                                                                                                                                  |
+| `/metrics`      | Implemented (metrics-dashboard)   | Show learning-run counts, kept-rate, and token usage (real vs estimated). A live dashboard view is available under the AutoClaw activity-bar container.                                                                                                                                                                                                                                                                                          |
+| `/service`      | Planned (automation-reach)        | Run the continuous watch service that ingests new sessions as they land.                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Knowledge Graph
 
 Distinct from the vector stores above, the **Knowledge Graph** (`.autoclaw/kg/kg.db`)
-holds agent- and task-attributed *facts* — decisions, findings, observations, and
+holds agent- and task-attributed _facts_ — decisions, findings, observations, and
 learned patterns — connected by typed relations, with bi-temporal validity. It is
 fed automatically by the orchestrator (dispatch/completion), `/learn` (consensus
 decisions + mined workflow patterns + review findings), and the `kg.record` MCP

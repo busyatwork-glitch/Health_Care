@@ -10,7 +10,7 @@ create table if not exists public.users (
   name text not null,
   email text not null unique,
   password_hash text not null,
-  role text not null check (role in ('patient','doctor','admin')),
+  role text not null check (role in ('patient','doctor','hospital','admin')),
   phone text,
   suspended boolean not null default false,
   created_at timestamptz not null default now(),
@@ -41,12 +41,15 @@ create table if not exists public.doctor_profiles (
 
 create table if not exists public.hospitals (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid unique references public.users(id) on delete cascade,
   name text not null,
   city text not null,
   specialties text[] not null default '{}',
   facilities text[] not null default '{}',
   description text not null default '',
   demo boolean not null default true,
+  verification text not null default 'approved' check (verification in ('pending','approved','rejected','suspended')),
+  phone text,
   emergency_services_verified boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

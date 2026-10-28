@@ -75,16 +75,16 @@ If you prefer configuring the Web Service manually:
 4. Expand **Advanced** and set **Health Check Path** to `/api/health`.
 5. Add the following **Environment Variables**:
 
-| Variable | Value | Description |
-|---|---|---|
-| `NODE_ENV` | `production` | Enables production mode & security |
-| `COOKIE_SECURE` | `true` | Secure HTTPS cookies |
-| `APP_TIME_ZONE` | `Asia/Kolkata` | Application timezone |
-| `SUPABASE_DB_URL` | `postgresql://...` | Postgres connection string |
-| `GEMINI_API_KEY` | `AIza...` | Google Gemini API key |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model name |
-| `JWT_SECRET` | *(Random 32+ characters)* | Secret for auth tokens |
-| `JWT_REFRESH_SECRET` | *(Random 32+ characters)* | Secret for refresh tokens |
+| Variable             | Value                     | Description                        |
+| -------------------- | ------------------------- | ---------------------------------- |
+| `NODE_ENV`           | `production`              | Enables production mode & security |
+| `COOKIE_SECURE`      | `true`                    | Secure HTTPS cookies               |
+| `APP_TIME_ZONE`      | `Asia/Kolkata`            | Application timezone               |
+| `SUPABASE_DB_URL`    | `postgresql://...`        | Postgres connection string         |
+| `GEMINI_API_KEY`     | `AIza...`                 | Google Gemini API key              |
+| `GEMINI_MODEL`       | `gemini-3.8-flash`        | Gemini model name                  |
+| `JWT_SECRET`         | _(Random 32+ characters)_ | Secret for auth tokens             |
+| `JWT_REFRESH_SECRET` | _(Random 32+ characters)_ | Secret for refresh tokens          |
 
 6. Click **Create Web Service**.
 

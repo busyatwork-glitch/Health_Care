@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: COOKIE_SECURE
-        value: "true"
+        value: 'true'
       - key: APP_TIME_ZONE
         value: Asia/Kolkata
       - key: JWT_SECRET
@@ -25,4 +25,4 @@ services:
       - key: GEMINI_MODEL
         value: gemini-flash-latest
       - key: GEMINI_TIMEOUT_MS
-        value: "60000"
+        value: '60000'

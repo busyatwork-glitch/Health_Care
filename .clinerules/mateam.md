@@ -33,19 +33,22 @@ Determine the sub-command from the user's message:
 ## launch — Spawn Agent Team
 
 ### Step 1 — Decompose the Task
+
 Break the user's task into parallel workstreams. Standard roles:
 
-| Role | Responsibility |
-|---|---|
+| Role           | Responsibility                                                                    |
+| -------------- | --------------------------------------------------------------------------------- |
 | **Researcher** | Gathers context: reads relevant files, searches codebase, identifies dependencies |
-| **Coder** | Implements changes based on Researcher's findings |
-| **Reviewer** | Audits Coder's output for correctness, security, and style |
-| **Verifier** | Runs tests, checks build, confirms acceptance criteria are met |
+| **Coder**      | Implements changes based on Researcher's findings                                 |
+| **Reviewer**   | Audits Coder's output for correctness, security, and style                        |
+| **Verifier**   | Runs tests, checks build, confirms acceptance criteria are met                    |
 
 Assign only the roles the task requires. Small tasks may need only Researcher + Coder.
 
 ### Step 2 — Create Scratchpad
+
 Create `.autoclaw/mateam/scratch/<session-id>/` with:
+
 - `plan.md` — task decomposition and role assignments
 - `context.md` — shared findings (Researcher writes here)
 - `output.md` — Coder's deliverables
@@ -57,31 +60,37 @@ Write the task and role breakdown to `plan.md`.
 ### Step 3 — Execute Roles in Order
 
 **Researcher:**
+
 - Under Claude Code: dispatch via `Agent` tool with the prompt below. Otherwise: simulate this role in-session and write handoff to `context.md`.
 - Read `plan.md` to understand scope.
 - Search the codebase for relevant files, functions, and patterns.
 - Write findings to `context.md`: file paths, key functions, existing patterns, potential conflicts.
 
 **Coder:**
+
 - Under Claude Code: dispatch via `Agent` tool with the prompt below. Otherwise: simulate this role in-session and write handoff to `output.md`.
 - Read `plan.md` and `context.md`.
 - Implement the required changes.
 - Write a summary of changes made (files modified, functions added/changed) to `output.md`.
 
 **Reviewer:**
+
 - Under Claude Code: dispatch via `Agent` tool with the prompt below. Otherwise: simulate this role in-session and write handoff to `review.md`.
 - Read `output.md` and the actual changed files.
 - Check for: logic errors, security issues, style inconsistencies, missing edge cases.
 - Write findings to `review.md`. If blockers found, flag them clearly.
 
 **Verifier:**
+
 - Under Claude Code: dispatch via `Agent` tool with the prompt below. Otherwise: simulate this role in-session and write handoff to `verify.md`.
 - Read `review.md`. If blockers exist, halt and report to user.
 - Run the project's test suite and/or build command.
 - Write results (pass/fail, test output summary) to `verify.md`.
 
 ### Step 4 — Report
+
 Summarize all four role outputs to the user:
+
 - What was done (from `output.md`)
 - Any review concerns (from `review.md`)
 - Test/build result (from `verify.md`)

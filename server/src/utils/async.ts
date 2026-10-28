@@ -1,2 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
-export const asyncRoute = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction): void => { void fn(req, res, next).catch(next); };
+export const asyncRoute =
+  (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    void fn(req, res, next).catch(next);
+  };

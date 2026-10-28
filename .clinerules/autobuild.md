@@ -4,7 +4,7 @@
 
 ## Operating Rules (read first)
 
-1. **Never pre-create directories — just write the target file.** The write tool creates parent dirs for you, so writing `.autoclaw/autobuild/workflows/x.yaml` makes every missing folder along the way. (This is why `mkdir -p` / `touch` / `New-Item` are unnecessary *and* unreliable across Bash/PowerShell/cmd — but you don't have to reason about that: there is simply no directory step to take.)
+1. **Never pre-create directories — just write the target file.** The write tool creates parent dirs for you, so writing `.autoclaw/autobuild/workflows/x.yaml` makes every missing folder along the way. (This is why `mkdir -p` / `touch` / `New-Item` are unnecessary _and_ unreliable across Bash/PowerShell/cmd — but you don't have to reason about that: there is simply no directory step to take.)
 2. **Forward slashes in paths.** Always.
 3. **Idempotency.** `schedule` with an existing `<name>` updates the workflow in place — do not duplicate registry entries. `cancel` on a missing name reports "no such workflow" and exits cleanly.
 4. **Step commands are platform-aware.** Default templates use cross-platform npm scripts (`npm run build`, `npm test`). If a step needs a shell builtin, prefer Node/npm scripts in `package.json` over raw shell so it works on every host.
@@ -29,19 +29,19 @@ Determine the sub-command from the user's message:
 2. **Infer a real default step set from the name** — never ship a placeholder
    the user must remember to replace. Match the name (case-insensitive)
    against these, first hit wins; if several apply, include each matching step:
-   | Name contains | Default step(s) |
-   |---|---|
-   | `inbox` / `sweep` / `triage` | `id: inbox-sweep`, `mode: report`, `run: npm run autoclaw -- inbox sweep` (or, if no such script, a report-only doctor pass) |
-   | `lint` | `id: lint`, `run: npm run lint` |
-   | `test` | `id: test`, `run: npm test` |
-   | `build` | `id: build`, `run: npm run build` |
-   | `deploy` / `release` | `id: build`+`id: test`+`id: deploy` (deploy gated on `{{test.exit_code}} == 0`) |
-   | `health` / `doctor` / `check` | `id: check`, `mode: report`, `run: npm run doctor` |
-   | none of the above | a single `mode: report` step that runs the project's most relevant npm script; if none is obvious, leave `steps: []` and set status `draft` |
+   | Name contains                 | Default step(s)                                                                                                                             |
+   | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `inbox` / `sweep` / `triage`  | `id: inbox-sweep`, `mode: report`, `run: npm run autoclaw -- inbox sweep` (or, if no such script, a report-only doctor pass)                |
+   | `lint`                        | `id: lint`, `run: npm run lint`                                                                                                             |
+   | `test`                        | `id: test`, `run: npm test`                                                                                                                 |
+   | `build`                       | `id: build`, `run: npm run build`                                                                                                           |
+   | `deploy` / `release`          | `id: build`+`id: test`+`id: deploy` (deploy gated on `{{test.exit_code}} == 0`)                                                             |
+   | `health` / `doctor` / `check` | `id: check`, `mode: report`, `run: npm run doctor`                                                                                          |
+   | none of the above             | a single `mode: report` step that runs the project's most relevant npm script; if none is obvious, leave `steps: []` and set status `draft` |
 3. Create `.autoclaw/autobuild/workflows/<name>.yaml`. Example for a `nightly-test` workflow:
    ```yaml
    name: <name>
-   cron: "<expression>"
+   cron: '<expression>'
    created: <ISO timestamp>
    steps:
      - id: test
@@ -80,6 +80,7 @@ Determine the sub-command from the user's message:
    `⚠ Scheduler dormant — workflows below are registered but NOTHING will run. Open the AutoClaw workspace / re-activate the extension to start it.`
    Otherwise print `✓ Scheduler live (last tick <relative time>)`.
 2. Read `registry.json` and display a table. Flag any `draft` row as not-yet-runnable:
+
 ```
 Name           Cron            Last Run             Status
 ───────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ Read the most recent log file matching `.autoclaw/autobuild/runs/<name>-*.log` a
 ## One-Shot Workflow (no sub-command)
 
 If the user describes a task without a sub-command (e.g. "autobuild run my tests and deploy"):
+
 1. Infer steps from the description.
 2. Create a temporary workflow named `oneshot-<timestamp>`.
 3. Run it immediately via the **run** flow above.
@@ -113,7 +115,7 @@ If the user describes a task without a sub-command (e.g. "autobuild run my tests
 
 ```yaml
 name: my-workflow
-cron: "0 2 * * *"        # standard 5-field cron
+cron: '0 2 * * *' # standard 5-field cron
 created: 2026-04-01T00:00:00Z
 steps:
   - id: install
@@ -124,9 +126,9 @@ steps:
     run: npm test
   - id: deploy
     run: npm run deploy
-    condition: "{{test.exit_code}} == 0"   # optional gate
-notify: true              # VS Code notification on completion
-timeout: 600              # seconds per step, default 120
+    condition: '{{test.exit_code}} == 0' # optional gate
+notify: true # VS Code notification on completion
+timeout: 600 # seconds per step, default 120
 ```
 
 ### Step conditions
@@ -157,14 +159,15 @@ steps:
     run: npm run lint -- --fix
     mode: fix
     guard:
-      scope_globs: ["src/**", "test/**"]   # files the step may touch
-      max_files: 10                         # hard cap on files changed
-      require_clean_git: true              # reject if dirty working tree
-      rollback_on: test_fail               # rollback on test failure (or "never")
-    verify: npm test                       # command to verify fix succeeded
+      scope_globs: ['src/**', 'test/**'] # files the step may touch
+      max_files: 10 # hard cap on files changed
+      require_clean_git: true # reject if dirty working tree
+      rollback_on: test_fail # rollback on test failure (or "never")
+    verify: npm test # command to verify fix succeeded
 ```
 
 **Guard enforcement order:**
+
 1. `require_clean_git` — if true, rejects the step before execution if `git status --porcelain` is non-empty. Verdict: `rejected_dirty`.
 2. Pre-image capture — records `git diff --name-only` + untracked files before execution (for rollback).
 3. Step executes.
@@ -189,13 +192,13 @@ When creating workflows that should recover from common failures, use these patt
 
 ```yaml
 name: self-heal-lint
-cron: "0 4 * * *"
+cron: '0 4 * * *'
 steps:
   - id: lint-fix
     run: npm run lint -- --fix
     mode: fix
     guard:
-      scope_globs: ["src/**"]
+      scope_globs: ['src/**']
       max_files: 20
       require_clean_git: true
       rollback_on: test_fail
@@ -208,11 +211,11 @@ steps:
 
 ```yaml
 name: health-check
-cron: "*/30 * * * *"
+cron: '*/30 * * * *'
 steps:
   - id: check
     run: npm run doctor
-    mode: report    # never modifies files, guard not needed
+    mode: report # never modifies files, guard not needed
 ```
 
 **Rule of thumb:** Use `mode: report` unless the step intentionally mutates files. Use `mode: fix` with a `guard` when the step should change code and you want automatic rollback on failure.

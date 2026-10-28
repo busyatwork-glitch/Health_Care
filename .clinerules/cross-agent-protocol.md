@@ -8,6 +8,7 @@ All agents coordinate through the AutoClaw Orchestrator.
 ## Your Mailbox
 
 Check at the START of every task and AFTER completing work:
+
 - **Inbox**: `.autoclaw/orchestrator/comms/inboxes/cline/`
 - **Shared**: `.autoclaw/orchestrator/comms/inboxes/shared/`
 
@@ -17,6 +18,7 @@ task_complete, finding_report, question, answer.
 ## Send Messages
 
 Write JSON to target inbox. Filename: `{timestamp}-{type}-cline.json`
+
 - To Claude Code: `.autoclaw/orchestrator/comms/inboxes/claude-code/`
 - Broadcast: `.autoclaw/orchestrator/comms/inboxes/shared/`
 
@@ -42,13 +44,13 @@ AutoClaw is a local-first coordination, memory, and learning layer for AI coding
 
 Commands and exactly what they write:
 
-| Command | Status | Writes | Purpose |
-|---|---|---|---|
-| `/learn` | Implemented | distilled patterns → `.autoclaw/learnings/insight-<ts>.md`, regenerates `.autoclaw/agent-style.md`, merges `.autoclaw/vector/preferences.json`, records coordination facts → `.autoclaw/kg/kg.db`, appends `.autoclaw/kdream/memory/MEMORY.md` | Distill kept-vs-discarded patterns from past AI sessions (any tool) into durable, reusable guidance. |
-| `/index-code` | Implemented | the VECTOR store → `.autoclaw/vector/db.sqlite` (+ `last-index.json`, `index-health.json`). **Does NOT write:** the Knowledge Graph `.autoclaw/kg/kg.db` — `/index-code` never touches the KG | Chunk + embed the workspace codebase so `/retrieve` can do semantic code search. |
-| `/retrieve <query>` | Implemented | nothing (read-only) | Return the most relevant code + learning chunks for a query from the vector store. |
-| `/search <query>` | Implemented | nothing (read-only) | Semantic search over distilled learnings. |
-| `/metrics` | Implemented | nothing (read-only) | Show learning-run counts, kept-rate, and token usage from `.autoclaw/metrics/`. |
+| Command             | Status      | Writes                                                                                                                                                                                                                                         | Purpose                                                                                              |
+| ------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `/learn`            | Implemented | distilled patterns → `.autoclaw/learnings/insight-<ts>.md`, regenerates `.autoclaw/agent-style.md`, merges `.autoclaw/vector/preferences.json`, records coordination facts → `.autoclaw/kg/kg.db`, appends `.autoclaw/kdream/memory/MEMORY.md` | Distill kept-vs-discarded patterns from past AI sessions (any tool) into durable, reusable guidance. |
+| `/index-code`       | Implemented | the VECTOR store → `.autoclaw/vector/db.sqlite` (+ `last-index.json`, `index-health.json`). **Does NOT write:** the Knowledge Graph `.autoclaw/kg/kg.db` — `/index-code` never touches the KG                                                  | Chunk + embed the workspace codebase so `/retrieve` can do semantic code search.                     |
+| `/retrieve <query>` | Implemented | nothing (read-only)                                                                                                                                                                                                                            | Return the most relevant code + learning chunks for a query from the vector store.                   |
+| `/search <query>`   | Implemented | nothing (read-only)                                                                                                                                                                                                                            | Semantic search over distilled learnings.                                                            |
+| `/metrics`          | Implemented | nothing (read-only)                                                                                                                                                                                                                            | Show learning-run counts, kept-rate, and token usage from `.autoclaw/metrics/`.                      |
 
 Do not confuse the stores:
 

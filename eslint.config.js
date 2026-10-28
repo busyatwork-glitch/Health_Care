@@ -6,5 +6,9 @@ export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', '**/*.config.js'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  { files: ['**/*.{ts,tsx}'], languageOptions: { globals: { ...globals.browser, ...globals.node } }, rules: { '@typescript-eslint/no-explicit-any': 'error' } },
+  {
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { '@typescript-eslint/no-explicit-any': 'error' },
+  },
 );

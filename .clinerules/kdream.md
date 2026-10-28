@@ -38,14 +38,17 @@ Determine the sub-command from the user's message:
 3. Create `.autoclaw/kdream/memory/MEMORY.md` if missing with this structure:
    ```markdown
    # KDream Memory
-   
+
    ## Follow-ups
+
    <!-- KDream checks this section on every tick. Add tasks here. -->
-   
+
    ## Facts
+
    <!-- Consolidated knowledge about this workspace. -->
-   
+
    ## Observations
+
    <!-- Notable events and patterns observed over time. -->
    ```
 4. Append to today's log (`.autoclaw/kdream/logs/YYYY-MM-DD.md`):
@@ -69,12 +72,16 @@ Determine the sub-command from the user's message:
 On each tick:
 
 ### 1. Check git status
+
 If a git repo exists: run `git status` and `git log --oneline -5`.
+
 - If there are uncommitted changes older than 1 hour: log `[WARN] Stale uncommitted changes: <files>` and notify user.
 - If recent commits exist: log them silently.
 
 ### 2. Scan TODO/FIXME items
+
 Glob all source files for lines matching `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`.
+
 - For each match: record file path, line number, and comment text.
 - Compare against previous tick's list (stored in `state.json` under `"todos"`).
 - New items since last tick → log `[NEW TODO] <file>:<line> — <text>` and notify user.
@@ -82,16 +89,20 @@ Glob all source files for lines matching `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`.
 - Update `state.json` with current todo list.
 
 ### 3. Check MEMORY.md follow-ups
+
 Read `.autoclaw/kdream/memory/MEMORY.md`, find all lines under `## Follow-ups`.
+
 - Lines starting with `- [ ]` are open tasks → report them to the user if any exist.
 - Lines starting with `- [x]` are done → move to `## Observations` during next autoDream.
 - If the user asks KDream to act on a follow-up: work on it, then mark `- [x]`.
 
 ### 4. Decide and act
+
 - If ≥1 notification-worthy item: surface a concise summary to the user with options to act.
 - If nothing notable: append a silent heartbeat to log only. Do not disturb the user.
 
 ### 5. Update state
+
 Increment `tick` in `state.json`. Save current todo list snapshot.
 If `tick % 20 == 0` or last dream >24h ago → trigger **autoDream**.
 
@@ -100,6 +111,7 @@ If `tick % 20 == 0` or last dream >24h ago → trigger **autoDream**.
 ## add — Add a Follow-up
 
 When the user runs `/kdream add <note>`:
+
 1. Append `- [ ] <note>` under `## Follow-ups` in `MEMORY.md`.
 2. Confirm: "Added to KDream follow-ups: `<note>`"
 
@@ -114,6 +126,7 @@ This is the fastest way to give KDream something to watch or act on.
 ## work — Act on an Item
 
 When the user runs `/kdream work <item description or number>`:
+
 1. **Dispatch.** If the host exposes a tool literally named `Agent` (Claude Code), spawn a coder subagent scoped to this single item with a short, self-contained prompt and the relevant file paths. Otherwise (Copilot, Cursor, Cline, Kilo, Continue, Antigravity, Windsurf, Kiro, etc.) work the item in-session yourself — do NOT fabricate an `Agent` call. Small items (one-file edits, doc tweaks) MAY be done in-session even when `Agent` is available, to avoid spawn overhead; items spanning ≥3 files or requiring a research pass SHOULD use `Agent`.
 2. Identify the matching TODO/FIXME or follow-up item.
 3. Read the relevant file(s) and context.
@@ -128,6 +141,7 @@ Steps 2–5 apply regardless of which dispatch path was taken.
 ## ps — Status
 
 Read `.autoclaw/kdream/state.json` and report:
+
 - Running / stopped, start time, tick count, last dream timestamp
 - Number of open TODOs tracked
 - Number of open follow-ups in MEMORY.md
@@ -150,15 +164,19 @@ Read the last 30 lines of today's log at `.autoclaw/kdream/logs/YYYY-MM-DD.md`.
 Triggered automatically (tick % 20 or 24h elapsed) or via `/kdream dream`.
 
 ### Phase 1 — Orient
+
 List all files in `.autoclaw/kdream/memory/`. Note current MEMORY.md line count.
 
 ### Phase 2 — Gather
+
 Read last 7 days of log files. Extract:
+
 - `[NEW TODO]` entries → add to Facts if not already there
 - `[RESOLVED]` entries → move matching Follow-ups to Observations
 - `[WARN]` entries → surface any recurring patterns
 
 ### Phase 3 — Consolidate
+
 - Merge gathered items into appropriate MEMORY.md sections.
 - Remove contradictions (keep newer fact).
 - Convert relative dates to absolute ISO dates.
@@ -166,11 +184,14 @@ Read last 7 days of log files. Extract:
 - Move `- [x]` completed follow-ups from Follow-ups to Observations.
 
 ### Phase 4 — Prune
+
 If MEMORY.md exceeds 200 lines or 25KB:
+
 - Archive oldest 20% of Observations to `.autoclaw/kdream/memory/archive-YYYY-MM-DD.md`.
 - Remove them from MEMORY.md.
 
 ### Phase 5 — Finalize
+
 Update `state.json` `"lastDream"`. Append: `[HH:MM:SS] autoDream complete. Memory: <N> lines.`
 
 ---
@@ -179,7 +200,7 @@ Update `state.json` `"lastDream"`. Append: `[HH:MM:SS] autoDream complete. Memor
 
 Distilled facts follow the continual-learning discipline: **Fail → Investigate
 → Verify → Distill → Consult.** A lesson is only worth keeping once it has been
-*verified*, and a verified fact records *how* it was checked.
+_verified_, and a verified fact records _how_ it was checked.
 
 When consolidating, a fact MAY carry a `verified_by` provenance stamp:
 

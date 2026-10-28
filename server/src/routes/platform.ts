@@ -12,132 +12,882 @@ import { asyncRoute } from '../utils/async.js';
 export const apiRouter = Router();
 const idSchema = z.string().uuid();
 const id = (value: string) => idSchema.parse(value);
-const page = (value: unknown, fallback = 1) => Math.min(500, Math.max(1, Number.isInteger(Number(value)) ? Number(value) : fallback));
+const page = (value: unknown, fallback = 1) =>
+  Math.min(500, Math.max(1, Number.isInteger(Number(value)) ? Number(value) : fallback));
 const like = (value: string) => `%${value.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 const apiRows = <T>(items: T[]) => toApi(items);
 // Postgres.js returns untyped rows; request bodies and identifiers are validated at the route boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
-function addFilter(parts: string[], values: Array<string | number>, expression: (placeholder: string) => string, value: string | number): void {
-  values.push(value); parts.push(expression(`$${values.length}`));
+function addFilter(
+  parts: string[],
+  values: Array<string | number>,
+  expression: (placeholder: string) => string,
+  value: string | number,
+): void {
+  values.push(value);
+  parts.push(expression(`$${values.length}`));
 }
-function where(parts: string[]): string { return parts.length ? `where ${parts.join(' and ')}` : ''; }
+function where(parts: string[]): string {
+  return parts.length ? `where ${parts.join(' and ')}` : '';
+}
 
-apiRouter.post('/ai/chat', requireAuth, requireRole('patient'), asyncRoute(async (req, res) => {
-  const input = chatSchema.parse(req.body);
-  let conversation: Row;
-  if (input.conversationId) {
-    const [found] = await db()`select * from public.conversations where id = ${id(input.conversationId)}::uuid and patient_id = ${req.user!.id}::uuid`;
-    if (!found) throw new ApiError(404, 'Conversation not found'); conversation = found as Row;
-  } else {
-    const [created] = await db()`insert into public.conversations (patient_id, title) values (${req.user!.id}::uuid, ${input.message.slice(0, 64).replace(/[.!?].*$/, '') || 'New health conversation'}) returning *`;
-    if (!created) throw new Error('Conversation creation did not return a row.'); conversation = created;
-  }
-  const recent = await db()`select role, text from public.messages where conversation_id = ${conversation.id}::uuid order by created_at desc limit 11`;
-  const history = recent.reverse().map((message) => ({ role: message.role as 'user' | 'assistant', text: message.text as string }));
-  await db()`insert into public.messages (conversation_id, role, text) values (${conversation.id}::uuid, 'user', ${input.message})`;
-  const result = await assess(input.message, history);
-  const [assistant] = await db()`insert into public.messages (conversation_id, role, text, assessment) values (${conversation.id}::uuid, 'assistant', ${result.assessment.message}, ${db().json(result.assessment)}) returning *`;
-  const [updated] = await db()`update public.conversations set last_activity_at = now(), updated_at = now() where id = ${conversation.id}::uuid returning *`;
-  if (!updated) throw new Error('Conversation update did not return a row.');
-  res.json({ conversationId: String(conversation.id), title: updated.title, message: toApi(assistant), assessment: result.assessment, provider: result.provider, demo: result.demo });
-}));
+apiRouter.post(
+  '/ai/chat',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const input = chatSchema.parse(req.body);
+    let conversation: Row;
+    if (input.conversationId) {
+      const [found] =
+        await db()`select * from public.conversations where id = ${id(input.conversationId)}::uuid and patient_id = ${req.user!.id}::uuid`;
+      if (!found) throw new ApiError(404, 'Conversation not found');
+      conversation = found as Row;
+    } else {
+      const [created] =
+        await db()`insert into public.conversations (patient_id, title) values (${req.user!.id}::uuid, ${input.message.slice(0, 64).replace(/[.!?].*$/, '') || 'New health conversation'}) returning *`;
+      if (!created) throw new Error('Conversation creation did not return a row.');
+      conversation = created;
+    }
+    const recent =
+      await db()`select role, text from public.messages where conversation_id = ${conversation.id}::uuid order by created_at desc limit 11`;
+    const history = recent.reverse().map((message) => ({
+      role: message.role as 'user' | 'assistant',
+      text: message.text as string,
+    }));
+    await db()`insert into public.messages (conversation_id, role, text) values (${conversation.id}::uuid, 'user', ${input.message})`;
+    const result = await assess(input.message, history);
+    const [assistant] =
+      await db()`insert into public.messages (conversation_id, role, text, assessment) values (${conversation.id}::uuid, 'assistant', ${result.assessment.message}, ${db().json(result.assessment)}) returning *`;
+    const [updated] =
+      await db()`update public.conversations set last_activity_at = now(), updated_at = now() where id = ${conversation.id}::uuid returning *`;
+    if (!updated) throw new Error('Conversation update did not return a row.');
+    res.json({
+      conversationId: String(conversation.id),
+      title: updated.title,
+      message: toApi(assistant),
+      assessment: result.assessment,
+      provider: result.provider,
+      demo: result.demo,
+    });
+  }),
+);
 
-apiRouter.get('/conversations', requireAuth, requireRole('patient'), asyncRoute(async (req, res) => {
-  const search = typeof req.query.search === 'string' ? req.query.search.slice(0, 100) : '';
-  const current = page(req.query.page); const limit = 20; const values: Array<string | number> = [req.user!.id];
-  const searchClause = search ? `and title ilike $2 escape '\\'` : '';
-  if (search) values.push(like(search));
-  const countRows = await db().unsafe(`select count(*)::int as count from public.conversations where patient_id = $1::uuid ${searchClause}`, values) as Row[];
-  const items = await db().unsafe(`select * from public.conversations where patient_id = $1::uuid ${searchClause} order by last_activity_at desc offset $${values.length + 1} limit $${values.length + 2}`, [...values, (current - 1) * limit, limit]) as Row[];
-  const total = countRows[0]?.count ?? 0;
-  res.json({ items: apiRows(items), page: current, total, pages: Math.ceil(total / limit) });
-}));
-apiRouter.get('/conversations/:id', requireAuth, requireRole('patient'), asyncRoute(async (req, res) => {
-  const [conversation] = await db()`select * from public.conversations where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid`;
-  if (!conversation) throw new ApiError(404, 'Conversation not found');
-  const messages = await db()`select * from public.messages where conversation_id = ${conversation.id}::uuid order by created_at limit 300`;
-  res.json({ conversation: toApi(conversation), messages: apiRows(messages) });
-}));
-apiRouter.patch('/conversations/:id', requireAuth, requireRole('patient'), asyncRoute(async (req, res) => {
-  const title = z.string().trim().min(1).max(120).parse(req.body.title);
-  const [result] = await db()`update public.conversations set title = ${title}, updated_at = now() where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid returning *`;
-  if (!result) throw new ApiError(404, 'Conversation not found'); res.json({ conversation: toApi(result) });
-}));
-apiRouter.delete('/conversations/:id', requireAuth, requireRole('patient'), asyncRoute(async (req, res) => {
-  const result = await db()`delete from public.conversations where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid returning id`;
-  if (!result.length) throw new ApiError(404, 'Conversation not found'); res.json({ ok: true });
-}));
+apiRouter.get(
+  '/conversations',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const search = typeof req.query.search === 'string' ? req.query.search.slice(0, 100) : '';
+    const current = page(req.query.page);
+    const limit = 20;
+    const values: Array<string | number> = [req.user!.id];
+    const searchClause = search ? `and title ilike $2 escape '\\'` : '';
+    if (search) values.push(like(search));
+    const countRows = (await db().unsafe(
+      `select count(*)::int as count from public.conversations where patient_id = $1::uuid ${searchClause}`,
+      values,
+    )) as Row[];
+    const items = (await db().unsafe(
+      `select * from public.conversations where patient_id = $1::uuid ${searchClause} order by last_activity_at desc offset $${values.length + 1} limit $${values.length + 2}`,
+      [...values, (current - 1) * limit, limit],
+    )) as Row[];
+    const total = countRows[0]?.count ?? 0;
+    res.json({ items: apiRows(items), page: current, total, pages: Math.ceil(total / limit) });
+  }),
+);
+apiRouter.get(
+  '/conversations/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const [conversation] =
+      await db()`select * from public.conversations where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid`;
+    if (!conversation) throw new ApiError(404, 'Conversation not found');
+    const messages =
+      await db()`select * from public.messages where conversation_id = ${conversation.id}::uuid order by created_at limit 300`;
+    res.json({ conversation: toApi(conversation), messages: apiRows(messages) });
+  }),
+);
+apiRouter.patch(
+  '/conversations/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const title = z.string().trim().min(1).max(120).parse(req.body.title);
+    const [result] =
+      await db()`update public.conversations set title = ${title}, updated_at = now() where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid returning *`;
+    if (!result) throw new ApiError(404, 'Conversation not found');
+    res.json({ conversation: toApi(result) });
+  }),
+);
+apiRouter.delete(
+  '/conversations/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const result =
+      await db()`delete from public.conversations where id = ${id(String(req.params.id))}::uuid and patient_id = ${req.user!.id}::uuid returning id`;
+    if (!result.length) throw new ApiError(404, 'Conversation not found');
+    res.json({ ok: true });
+  }),
+);
 
-apiRouter.get('/doctors', asyncRoute(async (req, res) => {
-  const current = page(req.query.page); const limit = 12; const parts = ["(d.verification = 'approved' or (d.verification = 'pending' and d.demo = false and d.city <> 'Demo City'))"]; const values: Array<string | number> = [];
-  if (typeof req.query.specialty === 'string') addFilter(parts, values, (p) => `d.specialty ilike ${p} escape '\\'`, like(req.query.specialty.slice(0, 100)));
-  if (typeof req.query.city === 'string') addFilter(parts, values, (p) => `d.city ilike ${p} escape '\\'`, like(req.query.city.slice(0, 100)));
-  if (typeof req.query.q === 'string') addFilter(parts, values, (p) => `u.name ilike ${p} escape '\\'`, like(req.query.q.slice(0, 100)));
-  if (req.query.demo === 'true') parts.push('d.demo = true');
-  const clause = where(parts); const sort = req.query.sort === 'fee' ? 'd.fee asc' : 'd.years_experience desc';
-  const totalRows = await db().unsafe(`select count(*)::int as count from public.doctor_profiles d join public.users u on u.id=d.user_id ${clause}`, values) as Row[];
-  const items = await db().unsafe(`select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id ${clause} order by ${sort} offset $${values.length + 1} limit $${values.length + 2}`, [...values, (current - 1) * limit, limit]) as Row[];
-  const ids = items.map((doctor) => doctor.id);
-  const reviews = ids.length ? await db()`select doctor_id, avg(rating)::float as average, count(*)::int as count from public.reviews where moderated=false and doctor_id = any(${ids}::uuid[]) group by doctor_id` : [];
-  const doctors = items.map((doctor) => ({ ...doctor, review: reviews.find((entry) => entry.doctor_id === doctor.id) ? toApi(reviews.find((entry) => entry.doctor_id === doctor.id)) : { average: null, count: 0 } }));
-  const total = totalRows[0]?.count ?? 0;
-  res.json({ items: apiRows(doctors), page: current, total, pages: Math.ceil(total / limit), source: items.some((doc) => doc.demo) ? 'fictional demo profiles' : 'provider-submitted profiles' });
-}));
-apiRouter.get('/doctors/:id', asyncRoute(async (req, res) => {
-  const doctorId = id(String(req.params.id));
-  const [doctor] = await db()`select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.id=${doctorId}::uuid and (d.verification='approved' or (d.verification='pending' and d.demo=false and d.city<>'Demo City'))`;
-  if (!doctor) throw new ApiError(404, 'Doctor not found');
-  const reviews = await db()`select r.*, jsonb_build_object('id',u.id,'name',u.name) as patient from public.reviews r join public.users u on u.id=r.patient_id where r.doctor_id=${doctorId}::uuid and r.moderated=false order by r.created_at desc limit 20`;
-  res.json({ doctor: toApi(doctor), reviews: apiRows(reviews), source: doctor.demo ? 'fictional demo profile' : 'provider-submitted profile' });
-}));
-apiRouter.get('/doctors/:id/availability', asyncRoute(async (req, res) => {
-  const [doctor] = await db()`select * from public.doctor_profiles where id=${id(String(req.params.id))}::uuid and verification='approved'`;
-  if (!doctor) throw new ApiError(404, 'Doctor not found');
-  const from = new Date(typeof req.query.from === 'string' ? req.query.from : Date.now()); const until = new Date(from.getTime() + 14 * 86400000);
-  const booked = await db()`select starts_at from public.appointments where doctor_id=${doctor.id}::uuid and starts_at >= ${from} and starts_at < ${until} and status in ('pending','confirmed')`;
-  const blocked = await db()`select date from public.availability where doctor_id=${doctor.id}::uuid and date >= ${new Date(from.toDateString())} and date < ${new Date(new Date(from.toDateString()).getTime()+14*86400000)} and blocked=true`;
-  const dates: Array<{ date: string; slots: string[] }> = [];
-  for (let offset=0; offset<14; offset++) { const day=new Date(from); day.setDate(from.getDate()+offset); day.setHours(0,0,0,0); if (!(doctor.working_days as number[]).includes(day.getDay()) || blocked.some((entry) => new Date(entry.date).toDateString()===day.toDateString())) continue;
-    const slots: string[]=[]; for(let minute=doctor.start_hour*60;minute+doctor.slot_minutes<=doctor.end_hour*60;minute+=doctor.slot_minutes){const start=new Date(day);start.setMinutes(minute);if(start>new Date()&&!booked.some((entry)=>new Date(entry.starts_at).getTime()===start.getTime()))slots.push(start.toISOString());} if(slots.length)dates.push({date:day.toISOString().slice(0,10),slots}); }
-  res.json({ dates, timezone: env.APP_TIME_ZONE, demo: doctor.demo });
-}));
+apiRouter.get(
+  '/doctors',
+  asyncRoute(async (req, res) => {
+    const current = page(req.query.page);
+    const limit = 12;
+    const parts = [
+      "(d.verification = 'approved' or (d.verification = 'pending' and d.demo = false and d.city <> 'Demo City'))",
+    ];
+    const values: Array<string | number> = [];
+    if (typeof req.query.specialty === 'string')
+      addFilter(
+        parts,
+        values,
+        (p) => `d.specialty ilike ${p} escape '\\'`,
+        like(req.query.specialty.slice(0, 100)),
+      );
+    if (typeof req.query.city === 'string')
+      addFilter(
+        parts,
+        values,
+        (p) => `d.city ilike ${p} escape '\\'`,
+        like(req.query.city.slice(0, 100)),
+      );
+    if (typeof req.query.q === 'string')
+      addFilter(
+        parts,
+        values,
+        (p) => `u.name ilike ${p} escape '\\'`,
+        like(req.query.q.slice(0, 100)),
+      );
+    if (req.query.demo === 'true') parts.push('d.demo = true');
+    const clause = where(parts);
+    const sort = req.query.sort === 'fee' ? 'd.fee asc' : 'd.years_experience desc';
+    const totalRows = (await db().unsafe(
+      `select count(*)::int as count from public.doctor_profiles d join public.users u on u.id=d.user_id ${clause}`,
+      values,
+    )) as Row[];
+    const items = (await db().unsafe(
+      `select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id ${clause} order by ${sort} offset $${values.length + 1} limit $${values.length + 2}`,
+      [...values, (current - 1) * limit, limit],
+    )) as Row[];
+    const ids = items.map((doctor) => doctor.id);
+    const reviews = ids.length
+      ? await db()`select doctor_id, avg(rating)::float as average, count(*)::int as count from public.reviews where moderated=false and doctor_id = any(${ids}::uuid[]) group by doctor_id`
+      : [];
+    const doctors = items.map((doctor) => ({
+      ...doctor,
+      review: reviews.find((entry) => entry.doctor_id === doctor.id)
+        ? toApi(reviews.find((entry) => entry.doctor_id === doctor.id))
+        : { average: null, count: 0 },
+    }));
+    const total = totalRows[0]?.count ?? 0;
+    res.json({
+      items: apiRows(doctors),
+      page: current,
+      total,
+      pages: Math.ceil(total / limit),
+      source: items.some((doc) => doc.demo)
+        ? 'fictional demo profiles'
+        : 'provider-submitted profiles',
+    });
+  }),
+);
+apiRouter.get(
+  '/doctors/:id',
+  asyncRoute(async (req, res) => {
+    const doctorId = id(String(req.params.id));
+    const [doctor] =
+      await db()`select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.id=${doctorId}::uuid and (d.verification='approved' or (d.verification='pending' and d.demo=false and d.city<>'Demo City'))`;
+    if (!doctor) throw new ApiError(404, 'Doctor not found');
+    const reviews =
+      await db()`select r.*, jsonb_build_object('id',u.id,'name',u.name) as patient from public.reviews r join public.users u on u.id=r.patient_id where r.doctor_id=${doctorId}::uuid and r.moderated=false order by r.created_at desc limit 20`;
+    res.json({
+      doctor: toApi(doctor),
+      reviews: apiRows(reviews),
+      source: doctor.demo ? 'fictional demo profile' : 'provider-submitted profile',
+    });
+  }),
+);
+apiRouter.get(
+  '/doctors/:id/availability',
+  asyncRoute(async (req, res) => {
+    const [doctor] =
+      await db()`select * from public.doctor_profiles where id=${id(String(req.params.id))}::uuid and verification='approved'`;
+    if (!doctor) throw new ApiError(404, 'Doctor not found');
+    const from = new Date(typeof req.query.from === 'string' ? req.query.from : Date.now());
+    const until = new Date(from.getTime() + 14 * 86400000);
+    const booked =
+      await db()`select starts_at from public.appointments where doctor_id=${doctor.id}::uuid and starts_at >= ${from} and starts_at < ${until} and status in ('pending','confirmed')`;
+    const blocked =
+      await db()`select date from public.availability where doctor_id=${doctor.id}::uuid and date >= ${new Date(from.toDateString())} and date < ${new Date(new Date(from.toDateString()).getTime() + 14 * 86400000)} and blocked=true`;
+    const dates: Array<{ date: string; slots: string[] }> = [];
+    for (let offset = 0; offset < 14; offset++) {
+      const day = new Date(from);
+      day.setDate(from.getDate() + offset);
+      day.setHours(0, 0, 0, 0);
+      if (
+        !(doctor.working_days as number[]).includes(day.getDay()) ||
+        blocked.some((entry) => new Date(entry.date).toDateString() === day.toDateString())
+      )
+        continue;
+      const slots: string[] = [];
+      for (
+        let minute = doctor.start_hour * 60;
+        minute + doctor.slot_minutes <= doctor.end_hour * 60;
+        minute += doctor.slot_minutes
+      ) {
+        const start = new Date(day);
+        start.setMinutes(minute);
+        if (
+          start > new Date() &&
+          !booked.some((entry) => new Date(entry.starts_at).getTime() === start.getTime())
+        )
+          slots.push(start.toISOString());
+      }
+      if (slots.length) dates.push({ date: day.toISOString().slice(0, 10), slots });
+    }
+    res.json({ dates, timezone: env.APP_TIME_ZONE, demo: doctor.demo });
+  }),
+);
 
-apiRouter.get('/hospitals', asyncRoute(async (req, res) => {
-  const current=page(req.query.page); const limit=12; const parts: string[]=[]; const values: Array<string | number>=[];
-  if(typeof req.query.city==='string')addFilter(parts,values,(p)=>`city ilike ${p} escape '\\'`,like(req.query.city.slice(0,100)));
-  if(typeof req.query.specialty==='string')addFilter(parts,values,(p)=>`${p}=any(specialties)`,req.query.specialty.slice(0,100));
-  if(typeof req.query.q==='string')addFilter(parts,values,(p)=>`name ilike ${p} escape '\\'`,like(req.query.q.slice(0,100)));
-  const clause=where(parts); const totalRows=await db().unsafe(`select count(*)::int as count from public.hospitals ${clause}`,values) as Row[];
-  const items=await db().unsafe(`select * from public.hospitals ${clause} order by name offset $${values.length+1} limit $${values.length+2}`,[...values,(current-1)*limit,limit]) as Row[]; const total=totalRows[0]?.count??0;
-  res.json({items:apiRows(items),page:current,total,pages:Math.ceil(total/limit),source:'demo results; no live hospital data integration'});
-}));
-apiRouter.get('/hospitals/:id', asyncRoute(async (req,res)=>{const [hospital]=await db()`select * from public.hospitals where id=${id(String(req.params.id))}::uuid`;if(!hospital)throw new ApiError(404,'Hospital not found');const doctors=await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification='approved' and d.specialty=any(${hospital.specialties}::text[])`;res.json({hospital:toApi(hospital),doctors:apiRows(doctors)});}));
+apiRouter.get(
+  '/hospitals',
+  asyncRoute(async (req, res) => {
+    const current = page(req.query.page);
+    const limit = 12;
+    const parts: string[] = [
+      "(verification = 'approved' or verification is null or (verification = 'pending' and demo = false))",
+    ];
+    const values: Array<string | number> = [];
+    if (typeof req.query.city === 'string')
+      addFilter(
+        parts,
+        values,
+        (p) => `city ilike ${p} escape '\\'`,
+        like(req.query.city.slice(0, 100)),
+      );
+    if (typeof req.query.specialty === 'string')
+      addFilter(parts, values, (p) => `${p}=any(specialties)`, req.query.specialty.slice(0, 100));
+    if (typeof req.query.q === 'string')
+      addFilter(
+        parts,
+        values,
+        (p) => `name ilike ${p} escape '\\'`,
+        like(req.query.q.slice(0, 100)),
+      );
+    const clause = where(parts);
+    const totalRows = (await db().unsafe(
+      `select count(*)::int as count from public.hospitals ${clause}`,
+      values,
+    )) as Row[];
+    const items = (await db().unsafe(
+      `select * from public.hospitals ${clause} order by name offset $${values.length + 1} limit $${values.length + 2}`,
+      [...values, (current - 1) * limit, limit],
+    )) as Row[];
+    const total = totalRows[0]?.count ?? 0;
+    res.json({
+      items: apiRows(items),
+      page: current,
+      total,
+      pages: Math.ceil(total / limit),
+      source: items.some((h) => h.demo) ? 'demo & provider records' : 'provider records',
+    });
+  }),
+);
+apiRouter.get(
+  '/hospitals/:id',
+  asyncRoute(async (req, res) => {
+    const [hospital] =
+      await db()`select * from public.hospitals where id=${id(String(req.params.id))}::uuid and (verification = 'approved' or verification is null or (verification = 'pending' and demo = false))`;
+    if (!hospital) throw new ApiError(404, 'Hospital not found');
+    const doctors =
+      await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification='approved' and d.specialty=any(${hospital.specialties}::text[])`;
+    res.json({ hospital: toApi(hospital), doctors: apiRows(doctors) });
+  }),
+);
 
-apiRouter.get('/saved/:kind',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const kind=req.params.kind==='doctors'?'doctor':req.params.kind==='hospitals'?'hospital':null;if(!kind)throw new ApiError(404,'Saved item type not found');const items=kind==='doctor'?await db()`select s.*,to_jsonb(d) || jsonb_build_object('user',jsonb_build_object('id',u.id,'name',u.name)) as entity from public.saved_items s join public.doctor_profiles d on d.id=s.doctor_id join public.users u on u.id=d.user_id where s.patient_id=${req.user!.id}::uuid`:await db()`select s.*,to_jsonb(h) as entity from public.saved_items s join public.hospitals h on h.id=s.hospital_id where s.patient_id=${req.user!.id}::uuid`;res.json({items:apiRows(items)});}));
-apiRouter.post('/saved/:kind/:id',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const kind=req.params.kind==='doctors'?'doctor':req.params.kind==='hospitals'?'hospital':null;if(!kind)throw new ApiError(404,'Saved item type not found');const entityId=id(String(req.params.id));if(kind==='doctor'){const [exists]=await db()`select id from public.doctor_profiles where id=${entityId}::uuid and verification='approved'`;if(!exists)throw new ApiError(404,'Item not found');await db()`insert into public.saved_items(patient_id,doctor_id) values(${req.user!.id}::uuid,${entityId}::uuid) on conflict(patient_id,doctor_id) where doctor_id is not null do nothing`;}else{const [exists]=await db()`select id from public.hospitals where id=${entityId}::uuid`;if(!exists)throw new ApiError(404,'Item not found');await db()`insert into public.saved_items(patient_id,hospital_id) values(${req.user!.id}::uuid,${entityId}::uuid) on conflict(patient_id,hospital_id) where hospital_id is not null do nothing`;}res.status(201).json({ok:true});}));
-apiRouter.delete('/saved/:kind/:id',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const kind=req.params.kind==='doctors'?'doctor':req.params.kind==='hospitals'?'hospital':null;if(!kind)throw new ApiError(404,'Saved item type not found');const entityId=id(String(req.params.id));if(kind==='doctor')await db()`delete from public.saved_items where patient_id=${req.user!.id}::uuid and doctor_id=${entityId}::uuid`;else await db()`delete from public.saved_items where patient_id=${req.user!.id}::uuid and hospital_id=${entityId}::uuid`;res.json({ok:true});}));
+apiRouter.get(
+  '/hospital/profile',
+  requireAuth,
+  requireRole('hospital'),
+  asyncRoute(async (req, res) => {
+    const [hospital] =
+      await db()`select h.*, jsonb_build_object('id', u.id, 'name', u.name, 'email', u.email) as user from public.hospitals h left join public.users u on u.id = h.user_id where h.user_id = ${req.user!.id}::uuid limit 1`;
+    if (!hospital) throw new ApiError(404, 'Hospital profile not found');
+    res.json({ hospital: toApi(hospital) });
+  }),
+);
+apiRouter.patch(
+  '/hospital/profile',
+  requireAuth,
+  requireRole('hospital'),
+  asyncRoute(async (req, res) => {
+    const [hospital] =
+      await db()`select * from public.hospitals where user_id = ${req.user!.id}::uuid limit 1`;
+    if (!hospital) throw new ApiError(404, 'Hospital profile not found');
+    const input = z
+      .object({
+        name: z.string().trim().min(2).max(150).optional(),
+        city: z.string().trim().min(1).max(100).optional(),
+        description: z.string().max(2000).optional(),
+        phone: z.string().max(30).optional(),
+        specialties: z.array(z.string().max(100)).max(30).optional(),
+        facilities: z.array(z.string().max(100)).max(30).optional(),
+        emergencyServicesVerified: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const fields: Record<string, unknown> = {
+      name: input.name,
+      city: input.city,
+      description: input.description,
+      phone: input.phone,
+      specialties: input.specialties,
+      facilities: input.facilities,
+      emergency_services_verified: input.emergencyServicesVerified,
+    };
+    const changes = Object.entries(fields).filter(([, value]) => value !== undefined);
+    if (!changes.length) {
+      res.json({ hospital: toApi(hospital) });
+      return;
+    }
+    const values: Array<unknown> = [];
+    const set = changes.map(([key, value]) => {
+      values.push(value);
+      return `${key}=$${values.length}`;
+    });
+    values.push(hospital.id);
+    const [updated] = await db().unsafe(
+      `update public.hospitals set ${set.join(',')}, updated_at=now() where id=$${values.length}::uuid returning *`,
+      values as any[],
+    );
+    res.json({ hospital: toApi(updated) });
+  }),
+);
 
-apiRouter.post('/appointments',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const input=bookingSchema.parse(req.body);const [doctor]=await db()`select * from public.doctor_profiles where id=${id(input.doctorId)}::uuid and verification='approved'`;if(!doctor)throw new ApiError(404,'Doctor is not currently eligible for booking');if(!(doctor.consultation_types as string[]).includes(input.consultationType))throw new ApiError(400,'This consultation type is not available');const startsAt=new Date(input.startsAt);const now=new Date();const duration=doctor.slot_minutes*60000;if(startsAt<=now||Math.abs(startsAt.getTime()/60000-Math.round(startsAt.getTime()/60000))>0.001||startsAt.getTime()%duration!==0)throw new ApiError(400,'Select a valid future appointment slot');const day=startsAt.getDay();const minute=startsAt.getHours()*60+startsAt.getMinutes();if(!(doctor.working_days as number[]).includes(day)||minute<doctor.start_hour*60||minute+doctor.slot_minutes>doctor.end_hour*60)throw new ApiError(400,'Selected time falls outside the doctor’s availability');const dayStart=new Date(startsAt);dayStart.setHours(0,0,0,0);const dayEnd=new Date(dayStart.getTime()+86400000);const [blocked]=await db()`select id from public.availability where doctor_id=${doctor.id}::uuid and date>=${dayStart} and date<${dayEnd} and blocked=true`;if(blocked)throw new ApiError(409,'This date is unavailable');try{const [appointment]=await db()`insert into public.appointments(patient_id,doctor_id,starts_at,ends_at,consultation_type,reason,shared_summary,fee,reference) values(${req.user!.id}::uuid,${doctor.id}::uuid,${startsAt},${new Date(startsAt.getTime()+duration)},${input.consultationType},${input.reason},${input.sharedSummary??null},${doctor.fee},${`CK-${randomBytes(5).toString('hex').toUpperCase()}`}) returning *`;res.status(201).json({appointment:toApi(appointment)});}catch(error){if(error&&typeof error==='object'&&'code'in error&&error.code==='23505')throw new ApiError(409,'That time was just booked. Please choose another slot.');throw error;}}));
-apiRouter.get('/appointments',requireAuth,asyncRoute(async(req,res)=>{let condition='';let values:Array<string|number>=[];if(req.user!.role==='patient'){condition='where a.patient_id=$1::uuid';values=[req.user!.id];}else if(req.user!.role==='doctor'){const [doctor]=await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;if(!doctor){res.json({items:[]});return;}condition='where a.doctor_id=$1::uuid';values=[doctor.id];}const items=await db().unsafe(`select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id ${condition} order by a.starts_at desc limit 100`,values) as Row[];res.json({items:apiRows(items)});}));
-apiRouter.get('/appointments/:id',requireAuth,asyncRoute(async(req,res)=>{const [item]=await db()`select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id where a.id=${id(String(req.params.id))}::uuid`;if(!item)throw new ApiError(404,'Appointment not found');const patientId=item.patient?.id;const doctorUserId=item.doctor?.user_id;const owner=req.user!.role==='admin'||(req.user!.role==='patient'&&patientId===req.user!.id)||(req.user!.role==='doctor'&&doctorUserId===req.user!.id);if(!owner)throw new ApiError(404,'Appointment not found');res.json({appointment:toApi(item)});}));
-apiRouter.patch('/appointments/:id/cancel',requireAuth,asyncRoute(async(req,res)=>{const appointmentId=id(String(req.params.id));const [item]=await db()`select * from public.appointments where id=${appointmentId}::uuid`;if(!item)throw new ApiError(404,'Appointment not found');let doctorUserId:string|undefined;if(item.doctor_id){const [doctor]=await db()`select user_id from public.doctor_profiles where id=${item.doctor_id}::uuid`;doctorUserId=doctor?.user_id;}const owns=req.user!.role==='patient'&&item.patient_id===req.user!.id;const manages=req.user!.role==='doctor'&&doctorUserId===req.user!.id;if(!owns&&!manages&&req.user!.role!=='admin')throw new ApiError(404,'Appointment not found');if(!['pending','confirmed'].includes(item.status))throw new ApiError(409,'This appointment cannot be cancelled');const reason=z.string().max(500).optional().parse(req.body.reason)??'Cancelled';const [updated]=await db()`update public.appointments set status='cancelled',cancel_reason=${reason},updated_at=now() where id=${appointmentId}::uuid returning *`;res.json({appointment:toApi(updated)});}));
+apiRouter.get(
+  '/saved/:kind',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const kind =
+      req.params.kind === 'doctors'
+        ? 'doctor'
+        : req.params.kind === 'hospitals'
+          ? 'hospital'
+          : null;
+    if (!kind) throw new ApiError(404, 'Saved item type not found');
+    const items =
+      kind === 'doctor'
+        ? await db()`select s.*,to_jsonb(d) || jsonb_build_object('user',jsonb_build_object('id',u.id,'name',u.name)) as entity from public.saved_items s join public.doctor_profiles d on d.id=s.doctor_id join public.users u on u.id=d.user_id where s.patient_id=${req.user!.id}::uuid`
+        : await db()`select s.*,to_jsonb(h) as entity from public.saved_items s join public.hospitals h on h.id=s.hospital_id where s.patient_id=${req.user!.id}::uuid`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.post(
+  '/saved/:kind/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const kind =
+      req.params.kind === 'doctors'
+        ? 'doctor'
+        : req.params.kind === 'hospitals'
+          ? 'hospital'
+          : null;
+    if (!kind) throw new ApiError(404, 'Saved item type not found');
+    const entityId = id(String(req.params.id));
+    if (kind === 'doctor') {
+      const [exists] =
+        await db()`select id from public.doctor_profiles where id=${entityId}::uuid and verification='approved'`;
+      if (!exists) throw new ApiError(404, 'Item not found');
+      await db()`insert into public.saved_items(patient_id,doctor_id) values(${req.user!.id}::uuid,${entityId}::uuid) on conflict(patient_id,doctor_id) where doctor_id is not null do nothing`;
+    } else {
+      const [exists] = await db()`select id from public.hospitals where id=${entityId}::uuid`;
+      if (!exists) throw new ApiError(404, 'Item not found');
+      await db()`insert into public.saved_items(patient_id,hospital_id) values(${req.user!.id}::uuid,${entityId}::uuid) on conflict(patient_id,hospital_id) where hospital_id is not null do nothing`;
+    }
+    res.status(201).json({ ok: true });
+  }),
+);
+apiRouter.delete(
+  '/saved/:kind/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const kind =
+      req.params.kind === 'doctors'
+        ? 'doctor'
+        : req.params.kind === 'hospitals'
+          ? 'hospital'
+          : null;
+    if (!kind) throw new ApiError(404, 'Saved item type not found');
+    const entityId = id(String(req.params.id));
+    if (kind === 'doctor')
+      await db()`delete from public.saved_items where patient_id=${req.user!.id}::uuid and doctor_id=${entityId}::uuid`;
+    else
+      await db()`delete from public.saved_items where patient_id=${req.user!.id}::uuid and hospital_id=${entityId}::uuid`;
+    res.json({ ok: true });
+  }),
+);
 
-apiRouter.post('/health-summaries',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const input=z.object({conversationId:z.string().optional(),content:z.string().trim().min(10).max(3000),urgency:z.string().optional(),specialties:z.array(z.string().max(100)).max(5).default([])}).parse(req.body);let conversationId:string|null=null;if(input.conversationId){const [conversation]=await db()`select id from public.conversations where id=${id(input.conversationId)}::uuid and patient_id=${req.user!.id}::uuid`;if(!conversation)throw new ApiError(404,'Conversation not found');conversationId=conversation.id;}const [summary]=await db()`insert into public.health_summaries(patient_id,conversation_id,content,urgency,specialties) values(${req.user!.id}::uuid,${conversationId}::uuid,${input.content},${input.urgency??null},${input.specialties}) returning *`;res.status(201).json({summary:toApi(summary)});}));
-apiRouter.get('/health-summaries',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const items=await db()`select * from public.health_summaries where patient_id=${req.user!.id}::uuid order by created_at desc limit 100`;res.json({items:apiRows(items)});}));
-apiRouter.delete('/health-summaries/:id',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const result=await db()`delete from public.health_summaries where id=${id(String(req.params.id))}::uuid and patient_id=${req.user!.id}::uuid returning id`;if(!result.length)throw new ApiError(404,'Summary not found');res.json({ok:true});}));
-apiRouter.get('/activity',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const patient=req.user!.id;const [conversations,summaries,appointments,reviews]=await Promise.all([db()`select title,created_at from public.conversations where patient_id=${patient}::uuid order by created_at desc limit 30`,db()`select created_at,urgency from public.health_summaries where patient_id=${patient}::uuid order by created_at desc limit 30`,db()`select reference,starts_at,status,created_at from public.appointments where patient_id=${patient}::uuid order by created_at desc limit 30`,db()`select rating,created_at from public.reviews where patient_id=${patient}::uuid order by created_at desc limit 30`]);const items=[...conversations.map((x)=>({type:'conversation',title:`AI conversation: ${x.title}`,createdAt:x.created_at})),...summaries.map((x)=>({type:'summary',title:`Health summary saved${x.urgency?` · ${x.urgency} guidance`:''}`,createdAt:x.created_at})),...appointments.map((x)=>({type:'appointment',title:`Appointment ${x.status} · ${x.reference}`,createdAt:x.created_at})),...reviews.map((x)=>({type:'review',title:`Doctor review submitted · ${x.rating}/5`,createdAt:x.created_at}))].sort((a,b)=>new Date(b.createdAt as string).getTime()-new Date(a.createdAt as string).getTime()).slice(0,100);res.json({items:apiRows(items),notice:'This timeline is a personal activity view, not an official clinical record.'});}));
-apiRouter.post('/reviews',requireAuth,requireRole('patient'),asyncRoute(async(req,res)=>{const input=z.object({appointmentId:z.string(),rating:z.number().int().min(1).max(5),text:z.string().trim().max(1500).default('')}).parse(req.body);const [appointment]=await db()`select * from public.appointments where id=${id(input.appointmentId)}::uuid and patient_id=${req.user!.id}::uuid and status='completed'`;if(!appointment)throw new ApiError(403,'A review can be added only after your completed appointment');const [review]=await db()`insert into public.reviews(patient_id,doctor_id,appointment_id,rating,text) values(${req.user!.id}::uuid,${appointment.doctor_id}::uuid,${appointment.id}::uuid,${input.rating},${input.text}) returning *`;res.status(201).json({review:toApi(review)});}));
-apiRouter.get('/doctors/:id/reviews',asyncRoute(async(req,res)=>{const items=await db()`select r.*,jsonb_build_object('id',u.id,'name',u.name) as patient from public.reviews r join public.users u on u.id=r.patient_id where r.doctor_id=${id(String(req.params.id))}::uuid and r.moderated=false order by r.created_at desc limit 50`;res.json({items:apiRows(items)});}));
-apiRouter.patch('/doctor/profile',requireAuth,requireRole('doctor'),asyncRoute(async(req,res)=>{const [doctor]=await db()`select * from public.doctor_profiles where user_id=${req.user!.id}::uuid`;if(!doctor)throw new ApiError(404,'Doctor profile not found');const input=z.object({specialty:z.string().trim().min(2).max(100).optional(),qualifications:z.array(z.string().max(100)).max(10).optional(),bio:z.string().max(2000).optional(),city:z.string().max(100).optional(),fee:z.number().min(0).max(100000).optional(),languages:z.array(z.string().max(50)).max(10).optional(),consultationTypes:z.array(z.enum(['in-person','online'])).min(1).max(2).optional()}).strict().parse(req.body);const fields:Record<string,string|number|string[]|undefined>={specialty:input.specialty,qualifications:input.qualifications,bio:input.bio,city:input.city,fee:input.fee,languages:input.languages,consultation_types:input.consultationTypes};const changes=Object.entries(fields).filter(([,value])=>value!==undefined);if(!changes.length){res.json({doctor:toApi(doctor)});return;}const values:Array<string|number|string[]> = [];const set=changes.map(([key,value])=>{values.push(value as string|number|string[]);return `${key}=$${values.length}`;});values.push(doctor.id);const [updated]=await db().unsafe(`update public.doctor_profiles set ${set.join(',')},updated_at=now() where id=$${values.length}::uuid returning *`,values);res.json({doctor:toApi(updated)});}));
-apiRouter.get('/doctor/profile',requireAuth,requireRole('doctor'),asyncRoute(async(req,res)=>{const [doctor]=await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.user_id=${req.user!.id}::uuid`;if(!doctor)throw new ApiError(404,'Doctor profile not found');res.json({doctor:toApi(doctor)});}));
-apiRouter.put('/doctor/availability',requireAuth,requireRole('doctor'),asyncRoute(async(req,res)=>{const input=z.object({workingDays:z.array(z.number().int().min(0).max(6)).min(1).max(7),startHour:z.number().int().min(0).max(23),endHour:z.number().int().min(1).max(24),slotMinutes:z.number().int().min(15).max(120),blockedDates:z.array(z.string().datetime()).max(90).default([])}).refine((x)=>x.startHour<x.endHour,'Start time must be before end time').parse(req.body);const [doctor]=await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;if(!doctor)throw new ApiError(404,'Doctor profile not found');await db().begin(async(tx)=>{await tx`update public.doctor_profiles set working_days=${[...new Set(input.workingDays)]},start_hour=${input.startHour},end_hour=${input.endHour},slot_minutes=${input.slotMinutes},updated_at=now() where id=${doctor.id}::uuid`;await tx`delete from public.availability where doctor_id=${doctor.id}::uuid and blocked=true`;for(const date of input.blockedDates)await tx`insert into public.availability(doctor_id,date,blocked) values(${doctor.id}::uuid,${new Date(date)},true) on conflict(doctor_id,date) do update set blocked=true,updated_at=now()`;});res.json({ok:true});}));
-apiRouter.patch('/doctor/appointments/:id/status',requireAuth,requireRole('doctor'),asyncRoute(async(req,res)=>{const status=z.enum(['confirmed','rejected','completed','no-show']).parse(req.body.status);const [doctor]=await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;const [item]=doctor?await db()`select * from public.appointments where id=${id(String(req.params.id))}::uuid and doctor_id=${doctor.id}::uuid`:[];if(!item)throw new ApiError(404,'Appointment not found');const transitions:Record<string,string[]>={pending:['confirmed','rejected'],confirmed:['completed','no-show']};if(!transitions[item.status]?.includes(status))throw new ApiError(409,'This appointment status transition is not allowed');const [updated]=await db()`update public.appointments set status=${status},updated_at=now() where id=${item.id}::uuid returning *`;res.json({appointment:toApi(updated)});}));
+apiRouter.post(
+  '/appointments',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const input = bookingSchema.parse(req.body);
+    const [doctor] =
+      await db()`select * from public.doctor_profiles where id=${id(input.doctorId)}::uuid and verification='approved'`;
+    if (!doctor) throw new ApiError(404, 'Doctor is not currently eligible for booking');
+    if (!(doctor.consultation_types as string[]).includes(input.consultationType))
+      throw new ApiError(400, 'This consultation type is not available');
+    const startsAt = new Date(input.startsAt);
+    const now = new Date();
+    const duration = doctor.slot_minutes * 60000;
+    if (
+      startsAt <= now ||
+      Math.abs(startsAt.getTime() / 60000 - Math.round(startsAt.getTime() / 60000)) > 0.001 ||
+      startsAt.getTime() % duration !== 0
+    )
+      throw new ApiError(400, 'Select a valid future appointment slot');
+    const day = startsAt.getDay();
+    const minute = startsAt.getHours() * 60 + startsAt.getMinutes();
+    if (
+      !(doctor.working_days as number[]).includes(day) ||
+      minute < doctor.start_hour * 60 ||
+      minute + doctor.slot_minutes > doctor.end_hour * 60
+    )
+      throw new ApiError(400, 'Selected time falls outside the doctor’s availability');
+    const dayStart = new Date(startsAt);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    const [blocked] =
+      await db()`select id from public.availability where doctor_id=${doctor.id}::uuid and date>=${dayStart} and date<${dayEnd} and blocked=true`;
+    if (blocked) throw new ApiError(409, 'This date is unavailable');
+    try {
+      const [appointment] =
+        await db()`insert into public.appointments(patient_id,doctor_id,starts_at,ends_at,consultation_type,reason,shared_summary,fee,reference) values(${req.user!.id}::uuid,${doctor.id}::uuid,${startsAt},${new Date(startsAt.getTime() + duration)},${input.consultationType},${input.reason},${input.sharedSummary ?? null},${doctor.fee},${`CK-${randomBytes(5).toString('hex').toUpperCase()}`}) returning *`;
+      res.status(201).json({ appointment: toApi(appointment) });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
+        throw new ApiError(409, 'That time was just booked. Please choose another slot.');
+      throw error;
+    }
+  }),
+);
+apiRouter.get(
+  '/appointments',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    let condition = '';
+    let values: Array<string | number> = [];
+    if (req.user!.role === 'patient') {
+      condition = 'where a.patient_id=$1::uuid';
+      values = [req.user!.id];
+    } else if (req.user!.role === 'doctor') {
+      const [doctor] =
+        await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;
+      if (!doctor) {
+        res.json({ items: [] });
+        return;
+      }
+      condition = 'where a.doctor_id=$1::uuid';
+      values = [doctor.id];
+    }
+    const items = (await db().unsafe(
+      `select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id ${condition} order by a.starts_at desc limit 100`,
+      values,
+    )) as Row[];
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.get(
+  '/appointments/:id',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const [item] =
+      await db()`select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id where a.id=${id(String(req.params.id))}::uuid`;
+    if (!item) throw new ApiError(404, 'Appointment not found');
+    const patientId = item.patient?.id;
+    const doctorUserId = item.doctor?.user_id;
+    const owner =
+      req.user!.role === 'admin' ||
+      (req.user!.role === 'patient' && patientId === req.user!.id) ||
+      (req.user!.role === 'doctor' && doctorUserId === req.user!.id);
+    if (!owner) throw new ApiError(404, 'Appointment not found');
+    res.json({ appointment: toApi(item) });
+  }),
+);
+apiRouter.patch(
+  '/appointments/:id/cancel',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const appointmentId = id(String(req.params.id));
+    const [item] = await db()`select * from public.appointments where id=${appointmentId}::uuid`;
+    if (!item) throw new ApiError(404, 'Appointment not found');
+    let doctorUserId: string | undefined;
+    if (item.doctor_id) {
+      const [doctor] =
+        await db()`select user_id from public.doctor_profiles where id=${item.doctor_id}::uuid`;
+      doctorUserId = doctor?.user_id;
+    }
+    const owns = req.user!.role === 'patient' && item.patient_id === req.user!.id;
+    const manages = req.user!.role === 'doctor' && doctorUserId === req.user!.id;
+    if (!owns && !manages && req.user!.role !== 'admin')
+      throw new ApiError(404, 'Appointment not found');
+    if (!['pending', 'confirmed'].includes(item.status))
+      throw new ApiError(409, 'This appointment cannot be cancelled');
+    const reason = z.string().max(500).optional().parse(req.body.reason) ?? 'Cancelled';
+    const [updated] =
+      await db()`update public.appointments set status='cancelled',cancel_reason=${reason},updated_at=now() where id=${appointmentId}::uuid returning *`;
+    res.json({ appointment: toApi(updated) });
+  }),
+);
 
-apiRouter.get('/admin/doctors',requireAuth,requireRole('admin'),asyncRoute(async(req,res)=>{const status=z.enum(['pending','approved','rejected','suspended']).parse(typeof req.query.status==='string'?req.query.status:'pending');const items=await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification=${status} order by d.created_at limit 100`;res.json({items:apiRows(items)});}));
-apiRouter.patch('/admin/doctors/:id/verification',requireAuth,requireRole('admin'),asyncRoute(async(req,res)=>{const verification=z.enum(['approved','rejected','suspended']).parse(req.body.verification);const [doctor]=await db()`update public.doctor_profiles set verification=${verification},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;if(!doctor)throw new ApiError(404,'Doctor not found');await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${`doctor.${verification}`},'doctor',${String(doctor.id)})`;res.json({doctor:toApi(doctor)});}));
-apiRouter.get('/admin/users',requireAuth,requireRole('admin'),asyncRoute(async(_req,res)=>{const items=await db()`select id,name,email,role,suspended,created_at from public.users order by created_at desc limit 200`;res.json({items:apiRows(items)});}));
-apiRouter.patch('/admin/users/:id/suspension',requireAuth,requireRole('admin'),asyncRoute(async(req,res)=>{const suspended=z.boolean().parse(req.body.suspended);const [user]=await db()`update public.users set suspended=${suspended},updated_at=now() where id=${id(String(req.params.id))}::uuid returning id,name,email,role,suspended`;if(!user)throw new ApiError(404,'User not found');await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${suspended?'user.suspended':'user.unsuspended'},'user',${String(user.id)})`;res.json({user:toApi(user)});}));
-apiRouter.get('/admin/appointments',requireAuth,requireRole('admin'),asyncRoute(async(_req,res)=>{const items=await db()`select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id order by a.starts_at desc limit 200`;res.json({items:apiRows(items)});}));
-apiRouter.get('/admin/reviews',requireAuth,requireRole('admin'),asyncRoute(async(_req,res)=>{const items=await db()`select r.*,jsonb_build_object('id',p.id,'name',p.name) as patient,jsonb_build_object('id',d.id,'specialty',d.specialty,'user',jsonb_build_object('id',du.id,'name',du.name)) as doctor from public.reviews r join public.users p on p.id=r.patient_id join public.doctor_profiles d on d.id=r.doctor_id join public.users du on du.id=d.user_id order by r.created_at desc limit 200`;res.json({items:apiRows(items)});}));
-apiRouter.patch('/admin/reviews/:id/moderation',requireAuth,requireRole('admin'),asyncRoute(async(req,res)=>{const moderated=z.boolean().parse(req.body.moderated);const [review]=await db()`update public.reviews set moderated=${moderated},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;if(!review)throw new ApiError(404,'Review not found');await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${moderated?'review.hidden':'review.restored'},'review',${String(review.id)})`;res.json({review:toApi(review)});}));
+apiRouter.post(
+  '/health-summaries',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const input = z
+      .object({
+        conversationId: z.string().optional(),
+        content: z.string().trim().min(10).max(3000),
+        urgency: z.string().optional(),
+        specialties: z.array(z.string().max(100)).max(5).default([]),
+      })
+      .parse(req.body);
+    let conversationId: string | null = null;
+    if (input.conversationId) {
+      const [conversation] =
+        await db()`select id from public.conversations where id=${id(input.conversationId)}::uuid and patient_id=${req.user!.id}::uuid`;
+      if (!conversation) throw new ApiError(404, 'Conversation not found');
+      conversationId = conversation.id;
+    }
+    const [summary] =
+      await db()`insert into public.health_summaries(patient_id,conversation_id,content,urgency,specialties) values(${req.user!.id}::uuid,${conversationId}::uuid,${input.content},${input.urgency ?? null},${input.specialties}) returning *`;
+    res.status(201).json({ summary: toApi(summary) });
+  }),
+);
+apiRouter.get(
+  '/health-summaries',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const items =
+      await db()`select * from public.health_summaries where patient_id=${req.user!.id}::uuid order by created_at desc limit 100`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.delete(
+  '/health-summaries/:id',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const result =
+      await db()`delete from public.health_summaries where id=${id(String(req.params.id))}::uuid and patient_id=${req.user!.id}::uuid returning id`;
+    if (!result.length) throw new ApiError(404, 'Summary not found');
+    res.json({ ok: true });
+  }),
+);
+apiRouter.get(
+  '/activity',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const patient = req.user!.id;
+    const [conversations, summaries, appointments, reviews] = await Promise.all([
+      db()`select title,created_at from public.conversations where patient_id=${patient}::uuid order by created_at desc limit 30`,
+      db()`select created_at,urgency from public.health_summaries where patient_id=${patient}::uuid order by created_at desc limit 30`,
+      db()`select reference,starts_at,status,created_at from public.appointments where patient_id=${patient}::uuid order by created_at desc limit 30`,
+      db()`select rating,created_at from public.reviews where patient_id=${patient}::uuid order by created_at desc limit 30`,
+    ]);
+    const items = [
+      ...conversations.map((x) => ({
+        type: 'conversation',
+        title: `AI conversation: ${x.title}`,
+        createdAt: x.created_at,
+      })),
+      ...summaries.map((x) => ({
+        type: 'summary',
+        title: `Health summary saved${x.urgency ? ` · ${x.urgency} guidance` : ''}`,
+        createdAt: x.created_at,
+      })),
+      ...appointments.map((x) => ({
+        type: 'appointment',
+        title: `Appointment ${x.status} · ${x.reference}`,
+        createdAt: x.created_at,
+      })),
+      ...reviews.map((x) => ({
+        type: 'review',
+        title: `Doctor review submitted · ${x.rating}/5`,
+        createdAt: x.created_at,
+      })),
+    ]
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime(),
+      )
+      .slice(0, 100);
+    res.json({
+      items: apiRows(items),
+      notice: 'This timeline is a personal activity view, not an official clinical record.',
+    });
+  }),
+);
+apiRouter.post(
+  '/reviews',
+  requireAuth,
+  requireRole('patient'),
+  asyncRoute(async (req, res) => {
+    const input = z
+      .object({
+        appointmentId: z.string(),
+        rating: z.number().int().min(1).max(5),
+        text: z.string().trim().max(1500).default(''),
+      })
+      .parse(req.body);
+    const [appointment] =
+      await db()`select * from public.appointments where id=${id(input.appointmentId)}::uuid and patient_id=${req.user!.id}::uuid and status='completed'`;
+    if (!appointment)
+      throw new ApiError(403, 'A review can be added only after your completed appointment');
+    const [review] =
+      await db()`insert into public.reviews(patient_id,doctor_id,appointment_id,rating,text) values(${req.user!.id}::uuid,${appointment.doctor_id}::uuid,${appointment.id}::uuid,${input.rating},${input.text}) returning *`;
+    res.status(201).json({ review: toApi(review) });
+  }),
+);
+apiRouter.get(
+  '/doctors/:id/reviews',
+  asyncRoute(async (req, res) => {
+    const items =
+      await db()`select r.*,jsonb_build_object('id',u.id,'name',u.name) as patient from public.reviews r join public.users u on u.id=r.patient_id where r.doctor_id=${id(String(req.params.id))}::uuid and r.moderated=false order by r.created_at desc limit 50`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.patch(
+  '/doctor/profile',
+  requireAuth,
+  requireRole('doctor'),
+  asyncRoute(async (req, res) => {
+    const [doctor] =
+      await db()`select * from public.doctor_profiles where user_id=${req.user!.id}::uuid`;
+    if (!doctor) throw new ApiError(404, 'Doctor profile not found');
+    const input = z
+      .object({
+        specialty: z.string().trim().min(2).max(100).optional(),
+        qualifications: z.array(z.string().max(100)).max(10).optional(),
+        bio: z.string().max(2000).optional(),
+        city: z.string().max(100).optional(),
+        fee: z.number().min(0).max(100000).optional(),
+        languages: z.array(z.string().max(50)).max(10).optional(),
+        consultationTypes: z
+          .array(z.enum(['in-person', 'online']))
+          .min(1)
+          .max(2)
+          .optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const fields: Record<string, string | number | string[] | undefined> = {
+      specialty: input.specialty,
+      qualifications: input.qualifications,
+      bio: input.bio,
+      city: input.city,
+      fee: input.fee,
+      languages: input.languages,
+      consultation_types: input.consultationTypes,
+    };
+    const changes = Object.entries(fields).filter(([, value]) => value !== undefined);
+    if (!changes.length) {
+      res.json({ doctor: toApi(doctor) });
+      return;
+    }
+    const values: Array<string | number | string[]> = [];
+    const set = changes.map(([key, value]) => {
+      values.push(value as string | number | string[]);
+      return `${key}=$${values.length}`;
+    });
+    values.push(doctor.id);
+    const [updated] = await db().unsafe(
+      `update public.doctor_profiles set ${set.join(',')},updated_at=now() where id=$${values.length}::uuid returning *`,
+      values,
+    );
+    res.json({ doctor: toApi(updated) });
+  }),
+);
+apiRouter.get(
+  '/doctor/profile',
+  requireAuth,
+  requireRole('doctor'),
+  asyncRoute(async (req, res) => {
+    const [doctor] =
+      await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.user_id=${req.user!.id}::uuid`;
+    if (!doctor) throw new ApiError(404, 'Doctor profile not found');
+    res.json({ doctor: toApi(doctor) });
+  }),
+);
+apiRouter.put(
+  '/doctor/availability',
+  requireAuth,
+  requireRole('doctor'),
+  asyncRoute(async (req, res) => {
+    const input = z
+      .object({
+        workingDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+        startHour: z.number().int().min(0).max(23),
+        endHour: z.number().int().min(1).max(24),
+        slotMinutes: z.number().int().min(15).max(120),
+        blockedDates: z.array(z.string().datetime()).max(90).default([]),
+      })
+      .refine((x) => x.startHour < x.endHour, 'Start time must be before end time')
+      .parse(req.body);
+    const [doctor] =
+      await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;
+    if (!doctor) throw new ApiError(404, 'Doctor profile not found');
+    await db().begin(async (tx) => {
+      await tx`update public.doctor_profiles set working_days=${[...new Set(input.workingDays)]},start_hour=${input.startHour},end_hour=${input.endHour},slot_minutes=${input.slotMinutes},updated_at=now() where id=${doctor.id}::uuid`;
+      await tx`delete from public.availability where doctor_id=${doctor.id}::uuid and blocked=true`;
+      for (const date of input.blockedDates)
+        await tx`insert into public.availability(doctor_id,date,blocked) values(${doctor.id}::uuid,${new Date(date)},true) on conflict(doctor_id,date) do update set blocked=true,updated_at=now()`;
+    });
+    res.json({ ok: true });
+  }),
+);
+apiRouter.patch(
+  '/doctor/appointments/:id/status',
+  requireAuth,
+  requireRole('doctor'),
+  asyncRoute(async (req, res) => {
+    const status = z.enum(['confirmed', 'rejected', 'completed', 'no-show']).parse(req.body.status);
+    const [doctor] =
+      await db()`select id from public.doctor_profiles where user_id=${req.user!.id}::uuid`;
+    const [item] = doctor
+      ? await db()`select * from public.appointments where id=${id(String(req.params.id))}::uuid and doctor_id=${doctor.id}::uuid`
+      : [];
+    if (!item) throw new ApiError(404, 'Appointment not found');
+    const transitions: Record<string, string[]> = {
+      pending: ['confirmed', 'rejected'],
+      confirmed: ['completed', 'no-show'],
+    };
+    if (!transitions[item.status]?.includes(status))
+      throw new ApiError(409, 'This appointment status transition is not allowed');
+    const [updated] =
+      await db()`update public.appointments set status=${status},updated_at=now() where id=${item.id}::uuid returning *`;
+    res.json({ appointment: toApi(updated) });
+  }),
+);
+
+apiRouter.get(
+  '/admin/doctors',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const status = z
+      .enum(['pending', 'approved', 'rejected', 'suspended'])
+      .parse(typeof req.query.status === 'string' ? req.query.status : 'pending');
+    const items =
+      await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification=${status} order by d.created_at limit 100`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.patch(
+  '/admin/doctors/:id/verification',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const verification = z.enum(['approved', 'rejected', 'suspended']).parse(req.body.verification);
+    const [doctor] =
+      await db()`update public.doctor_profiles set verification=${verification},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;
+    if (!doctor) throw new ApiError(404, 'Doctor not found');
+    await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${`doctor.${verification}`},'doctor',${String(doctor.id)})`;
+    res.json({ doctor: toApi(doctor) });
+  }),
+);
+apiRouter.get(
+  '/admin/hospitals',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const status = z
+      .enum(['pending', 'approved', 'rejected', 'suspended'])
+      .parse(typeof req.query.status === 'string' ? req.query.status : 'pending');
+    const items =
+      await db()`select h.*,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) as user from public.hospitals h left join public.users u on u.id=h.user_id where h.verification=${status} order by h.created_at limit 100`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.patch(
+  '/admin/hospitals/:id/verification',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const verification = z.enum(['approved', 'rejected', 'suspended']).parse(req.body.verification);
+    const [hospital] =
+      await db()`update public.hospitals set verification=${verification},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;
+    if (!hospital) throw new ApiError(404, 'Hospital not found');
+    await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${`hospital.${verification}`},'hospital',${String(hospital.id)})`;
+    res.json({ hospital: toApi(hospital) });
+  }),
+);
+apiRouter.get(
+  '/admin/users',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (_req, res) => {
+    const items =
+      await db()`select id,name,email,role,suspended,created_at from public.users order by created_at desc limit 200`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.patch(
+  '/admin/users/:id/suspension',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const suspended = z.boolean().parse(req.body.suspended);
+    const [user] =
+      await db()`update public.users set suspended=${suspended},updated_at=now() where id=${id(String(req.params.id))}::uuid returning id,name,email,role,suspended`;
+    if (!user) throw new ApiError(404, 'User not found');
+    await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${suspended ? 'user.suspended' : 'user.unsuspended'},'user',${String(user.id)})`;
+    res.json({ user: toApi(user) });
+  }),
+);
+apiRouter.get(
+  '/admin/appointments',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (_req, res) => {
+    const items =
+      await db()`select a.*,case when p.id is null then null else jsonb_build_object('id',p.id,'name',p.name) end as patient,case when d.id is null then null else to_jsonb(d)||jsonb_build_object('user',jsonb_build_object('id',du.id,'name',du.name)) end as doctor from public.appointments a left join public.users p on p.id=a.patient_id left join public.doctor_profiles d on d.id=a.doctor_id left join public.users du on du.id=d.user_id order by a.starts_at desc limit 200`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.get(
+  '/admin/reviews',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (_req, res) => {
+    const items =
+      await db()`select r.*,jsonb_build_object('id',p.id,'name',p.name) as patient,jsonb_build_object('id',d.id,'specialty',d.specialty,'user',jsonb_build_object('id',du.id,'name',du.name)) as doctor from public.reviews r join public.users p on p.id=r.patient_id join public.doctor_profiles d on d.id=r.doctor_id join public.users du on du.id=d.user_id order by r.created_at desc limit 200`;
+    res.json({ items: apiRows(items) });
+  }),
+);
+apiRouter.patch(
+  '/admin/reviews/:id/moderation',
+  requireAuth,
+  requireRole('admin'),
+  asyncRoute(async (req, res) => {
+    const moderated = z.boolean().parse(req.body.moderated);
+    const [review] =
+      await db()`update public.reviews set moderated=${moderated},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;
+    if (!review) throw new ApiError(404, 'Review not found');
+    await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${moderated ? 'review.hidden' : 'review.restored'},'review',${String(review.id)})`;
+    res.json({ review: toApi(review) });
+  }),
+);

@@ -1,1 +1,38 @@
-{"name":"@care-kind/server","version":"0.1.0","type":"module","scripts":{"dev":"tsx watch src/index.ts","build":"tsc -p tsconfig.json","start":"node dist/index.js","typecheck":"tsc -p tsconfig.json --noEmit","seed":"tsx src/seed.ts","test":"vitest run --config vitest.config.ts"},"dependencies":{"@care-kind/shared":"*","@google/genai":"^1.26.0","argon2":"^0.44.0","cookie-parser":"^1.4.7","cors":"^2.8.5","dotenv":"^17.2.3","express":"^5.1.1","express-rate-limit":"^8.2.1","helmet":"^8.1.0","jsonwebtoken":"^9.0.2","postgres":"^3.4.9","zod":"^4.1.12"},"devDependencies":{"@types/cookie-parser":"^1.4.10","@types/cors":"^2.8.19","@types/express":"^5.0.5","@types/jsonwebtoken":"^9.0.10","@types/node":"^24.10.1","@types/supertest":"^6.0.3","supertest":"^7.1.4","tsx":"^4.20.6","vitest":"^4.0.8"}}
+{
+  "name": "@care-kind/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed": "tsx src/seed.ts",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@care-kind/shared": "*",
+    "@google/genai": "^1.26.0",
+    "argon2": "^0.44.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "postgres": "^3.4.9",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.10.1",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "vitest": "^4.0.8"
+  }
+}

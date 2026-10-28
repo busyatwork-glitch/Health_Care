@@ -43,29 +43,35 @@ Determine the sub-command from the user's message:
 ## plan — Generate Sprint Plans
 
 ### Input
+
 Read the manifest YAML from the specified path (default: first `.yaml` in `manifests/`).
 
 ### Algorithm
 
 **Phase 1: Parse & Validate**
+
 - Parse manifest YAML into task list with `id`, `name`, `depends_on`, `scope`, `effort`, `subtasks`, and the optional `required_capabilities`.
 - Validate: no duplicate IDs, all `depends_on` references exist, no empty scopes.
 - `required_capabilities` (optional, defaults to `[]`) is a list of capability tags (e.g. `["go", "security-review"]`) consumed by the capability-aware router. Manifests without this field continue to plan exactly as before.
 
 **Phase 2: Build Dependency Graph (DAG)**
+
 - Nodes = tasks, Edges = `depends_on` relationships.
 - Detect cycles using Kahn's algorithm. If cycle found, report error with the cycle path.
 
 **Phase 3: Level Assignment (Topological Sort)**
+
 - Level 0: tasks with no dependencies (in-degree 0).
 - Level N: tasks whose dependencies are all in levels < N.
 - Tasks at the same level CAN execute in parallel.
 
 **Phase 4: Scope Conflict Detection**
+
 - For each pair of tasks at the same level, check if their `scope` glob patterns can match overlapping files.
 - Conflicting tasks at the same level must be separated into different sprints or assigned to different agents with explicit merge ordering.
 
 **Phase 5: Sprint Assignment (Bin Packing)**
+
 - Read `agents.work_agents` from config (default: 4).
 - Read `planning.max_tasks_per_agent` and `planning.max_subtasks_per_sprint` from config.
 - For each level, assign tasks to agents respecting:
@@ -81,46 +87,50 @@ Read the manifest YAML from the specified path (default: first `.yaml` in `manif
   4. Affinity (co-locate related tasks)
 
 **Phase 6: Migration Range Allocation**
+
 - If tasks include database migrations, allocate sequential non-overlapping ranges per agent per sprint.
 - Range size from `git.conflict_prevention.migration_range_size` config.
 
 **Phase 7: Output**
+
 - Write sprint plan YAML to `.autoclaw/orchestrator/sprints/sprint-{N}.yaml` for each sprint.
 - Write summary to `.autoclaw/orchestrator/sprints/plan-summary.yaml`.
 - After generating sprint-N.yaml, the planner also writes a human-readable sprint-N.md alongside it (generated view; edit the .yaml). The .md is regenerated on every plan run.
 
 ### Sprint YAML Format
+
 ```yaml
 sprint: 1
 level: 0
-status: pending  # pending, assigned, in_progress, review, approved, merged
+status: pending # pending, assigned, in_progress, review, approved, merged
 assignments:
   - agent: WA-1
     tasks:
-      - id: "task-11"
-        name: "zippyctl CLI foundation"
+      - id: 'task-11'
+        name: 'zippyctl CLI foundation'
         subtasks: [...]
     scope:
-      - "cmd/zippyctl/**"
-      - "internal/cli/**"
-    branch: "feat/sprint-1-wa1-zippyctl"
+      - 'cmd/zippyctl/**'
+      - 'internal/cli/**'
+    branch: 'feat/sprint-1-wa1-zippyctl'
     migration_range: null
   - agent: WA-2
     tasks:
-      - id: "task-13"
-        name: "Secrets vault integration"
+      - id: 'task-13'
+        name: 'Secrets vault integration'
         subtasks: [...]
     scope:
-      - "internal/secrets/**"
-    branch: "feat/sprint-1-wa2-secrets"
+      - 'internal/secrets/**'
+    branch: 'feat/sprint-1-wa2-secrets'
     migration_range: null
 dependencies_met: true
 estimated_days: 4
 ```
 
 ### Plan Summary Format
+
 ```yaml
-project: "zippypanel"
+project: 'zippypanel'
 total_tasks: 75
 total_sprints: 9
 total_agents: 4
@@ -149,11 +159,11 @@ Confirm: "Generated {N} sprints for {M} tasks across {A} agents. Critical path: 
      - In-editor: run the command `AutoClaw: Intelligence — Build Context Pack`
        (`autoclaw.intelligence.contextPack`).
      - Headless / any runner: `node <autoclaw>/scripts/context-pack.js --task
-       "<sprint goal + task names>" --agent {agent} --sprint {N} --tasks {ids}`.
-     Either writes `.autoclaw/orchestrator/sprints/sprint-{N}-{agent}.context.md`
-     and prints a JSON summary. The pack is **degrade-safe** — if no embeddings
-     backend is reachable it still produces learnings/style/memory. Skipping this
-     step is allowed (the assignment still works), but note it in the confirm.
+"<sprint goal + task names>" --agent {agent} --sprint {N} --tasks {ids}`.
+       Either writes `.autoclaw/orchestrator/sprints/sprint-{N}-{agent}.context.md`
+       and prints a JSON summary. The pack is **degrade-safe** — if no embeddings
+       backend is reachable it still produces learnings/style/memory. Skipping this
+       step is allowed (the assignment still works), but note it in the confirm.
    - Render the sprint assignment from `templates/sprint-assignment.md` with the agent's tasks, scope, branch name, and migration range. Fill the `{{context_pack_path}}` token with `sprint-{N}-{agent}.context.md` (or `none` if you skipped the pack).
    - Write the rendered assignment to `.autoclaw/orchestrator/sprints/sprint-{N}-{agent}.md`.
 4. Update sprint status to `assigned`.
@@ -227,7 +237,7 @@ No stalls → omit the section.
    carrying the rendered prompt, and touch
    `.autoclaw/orchestrator/agents/{agent-id}/ready` so a runner picks it up.
 7. Append a line to `comms/comms-log.jsonl`: `{ type: "revive", agent,
-   stalled_for, template, rendered_at, by }`.
+stalled_for, template, rendered_at, by }`.
 
 Confirm: "Revive prompt rendered for {agent-id} (stalled {duration}).
 Paste into the agent's chat; or wait for the bridge/runner to deliver
@@ -282,6 +292,7 @@ answer to "wake my stalled peer."
 ## Quick Plan (no sub-command)
 
 If the user describes tasks without a sub-command:
+
 1. Infer task structure from the description.
 2. Generate a temporary manifest.
 3. Run the `plan` flow.

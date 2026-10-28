@@ -10,7 +10,9 @@ integration('Supertest HTTP integration (requires local socket permission)', () 
     expect(response.body.service).toBe('care-kind-api');
   });
   it('rejects untrusted browser origins before authentication', async () => {
-    const response = await supertest(app).post('/api/auth/logout').set('Origin', 'https://attacker.example');
+    const response = await supertest(app)
+      .post('/api/auth/logout')
+      .set('Origin', 'https://attacker.example');
     expect(response.status).toBe(403);
   });
 });
