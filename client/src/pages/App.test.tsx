@@ -51,4 +51,33 @@ describe('public site', () => {
     expect(screen.getByPlaceholderText(/Cardiology, Neurology, Pediatrics/i)).toBeInTheDocument();
     expect(screen.getByText(/Hospital accounts remain pending review/i)).toBeInTheDocument();
   });
+
+  it('renders forgot password link and recovery page', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/login']}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const forgotLink = screen.getByRole('link', { name: /forgot password\?/i });
+    expect(forgotLink).toBeInTheDocument();
+    expect(forgotLink).toHaveAttribute('href', '/forgot-password');
+  });
+
+  it('renders forgot password recovery screen', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/forgot-password']}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole('heading', { name: /reset your password/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send verification code/i })).toBeInTheDocument();
+  });
 });

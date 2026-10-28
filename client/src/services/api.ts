@@ -91,3 +91,19 @@ export async function chat(message: string, conversationId?: string): Promise<Ch
     body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
   });
 }
+export async function forgotPassword(email: string): Promise<{ ok: boolean; message: string }> {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+export async function resetPassword(payload: {
+  email: string;
+  otp: string;
+  password: string;
+}): Promise<{ ok: boolean; message: string }> {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

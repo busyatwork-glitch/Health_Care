@@ -1,6 +1,8 @@
 import { Router, type Response } from 'express';
+import { randomInt, createHash } from 'node:crypto';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { registerSchema } from '@care-kind/shared';
 import { env } from '../config/env.js';
 import { db, toApi } from '../db.js';
@@ -8,6 +10,7 @@ import { hashSession, makeRefreshToken } from '../models/index.js';
 import { ApiError } from '../middleware/errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncRoute } from '../utils/async.js';
+import { sendPasswordResetOtp } from '../services/email.js';
 
 export const authRouter = Router();
 const isSecure = env.COOKIE_SECURE || env.NODE_ENV === 'production';
@@ -181,5 +184,128 @@ authRouter.delete(
     res.clearCookie('accessToken', accessCookie);
     res.clearCookie('refreshToken', refreshCookie);
     res.json({ ok: true });
+  }),
+);
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().email('Please enter a valid email address'),
+});
+
+authRouter.post(
+  '/forgot-password',
+  asyncRoute(async (req, res) => {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ApiError(400, 'Please enter a valid email address');
+    }
+    const email = parsed.data.email.toLowerCase();
+
+    // Check if user exists and is not suspended
+    const [user] =
+      await db()`select id, name, suspended from public.users where email = ${email} limit 1`;
+    if (!user || user.suspended) {
+      // Return success to avoid email enumeration
+      res.json({
+        ok: true,
+        message: 'If an account exists with this email, a verification code was sent.',
+      });
+      return;
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = randomInt(100000, 1000000).toString();
+    const otpHash = createHash('sha256').update(otp).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    // Delete any previous active reset codes for this email
+    await db()`delete from public.password_resets where email = ${email}`;
+
+    // Store new reset record
+    await db()`insert into public.password_resets (email, otp_hash, expires_at) values (${email}, ${otpHash}, ${expiresAt})`;
+
+    // Send email via SMTP (or fallback logger)
+    try {
+      await sendPasswordResetOtp(email, otp);
+    } catch {
+      throw new ApiError(500, 'Unable to send password reset email. Please try again later.');
+    }
+
+    res.json({
+      ok: true,
+      message: 'If an account exists with this email, a verification code was sent.',
+    });
+  }),
+);
+
+const resetPasswordSchema = z.object({
+  email: z.string().trim().email('Please enter a valid email address'),
+  otp: z.string().trim().length(6, 'Verification code must be 6 digits'),
+  password: z.string().min(12, 'Password must be at least 12 characters'),
+});
+
+authRouter.post(
+  '/reset-password',
+  asyncRoute(async (req, res) => {
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]?.message ?? 'Invalid request data';
+      throw new ApiError(400, issue);
+    }
+    const { email: rawEmail, otp, password } = parsed.data;
+    const email = rawEmail.toLowerCase();
+
+    // Find active reset record
+    const [resetRecord] = await db()`
+      select id, otp_hash, attempts, expires_at 
+      from public.password_resets 
+      where email = ${email} and expires_at > now() 
+      order by created_at desc 
+      limit 1
+    `;
+
+    if (!resetRecord) {
+      throw new ApiError(
+        400,
+        'Verification code has expired or is invalid. Please request a new one.',
+      );
+    }
+
+    if (resetRecord.attempts >= 5) {
+      await db()`delete from public.password_resets where id = ${resetRecord.id}::uuid`;
+      throw new ApiError(
+        429,
+        'Too many incorrect attempts. Please request a new verification code.',
+      );
+    }
+
+    const enteredHash = createHash('sha256').update(otp).digest('hex');
+    if (enteredHash !== resetRecord.otp_hash) {
+      await db()`update public.password_resets set attempts = attempts + 1 where id = ${resetRecord.id}::uuid`;
+      throw new ApiError(400, 'Invalid verification code. Please check your email and try again.');
+    }
+
+    // Hash the new password with Argon2id
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+
+    await db().begin(async (transaction) => {
+      const [updatedUser] = await transaction`
+        update public.users 
+        set password_hash = ${passwordHash}, updated_at = now() 
+        where email = ${email} 
+        returning id
+      `;
+
+      if (!updatedUser) {
+        throw new ApiError(404, 'Account not found.');
+      }
+
+      // Delete the used reset code
+      await transaction`delete from public.password_resets where email = ${email}`;
+
+      // Invalidate existing refresh sessions to enforce security
+      await transaction`delete from public.refresh_sessions where user_id = ${updatedUser.id}::uuid`;
+    });
+
+    res.json({ ok: true, message: 'Password has been reset successfully. You can now sign in.' });
   }),
 );

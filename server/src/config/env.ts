@@ -36,6 +36,11 @@ const schema = z.object({
     .transform((v) => v === 'true'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@example.test'),
   SEED_ADMIN_PASSWORD: z.string().min(12).default('development-only-change-this-password'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
 });
 const configured = schema.parse(process.env);
 // Appointment working hours are interpreted in one configured clinic timezone; database dates remain UTC.

@@ -70,6 +70,17 @@ async function ensureSchema(): Promise<void> {
         null;
       end $$;
     `);
+    await client.unsafe(`
+      create table if not exists public.password_resets (
+        id uuid primary key default gen_random_uuid(),
+        email text not null,
+        otp_hash text not null,
+        expires_at timestamptz not null,
+        attempts int default 0,
+        created_at timestamptz default now()
+      );
+      create index if not exists idx_password_resets_email on public.password_resets(email);
+    `);
   } catch (error) {
     console.warn(
       '[DATABASE] Schema alignment notice:',

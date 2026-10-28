@@ -37,6 +37,8 @@ import {
   me,
   request,
   chat,
+  forgotPassword,
+  resetPassword,
   type ChatResult,
   type DoctorCard,
   type HospitalCard,
@@ -846,7 +848,20 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               />
             </label>
             <label>
-              Password
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <span>Password</span>
+                {mode === 'login' && (
+                  <Link
+                    to="/forgot-password"
+                    className="text-link"
+                    style={{ fontSize: '0.8125rem' }}
+                  >
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <input
                 name="password"
                 type="password"
@@ -897,6 +912,247 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     </div>
   );
 }
+
+function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [step, setStep] = useState<'request' | 'verify' | 'success'>('request');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const onRequest = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+    setLoading(true);
+    try {
+      const res = await forgotPassword(email.trim());
+      setStep('verify');
+      setNotice(
+        res.message ||
+          'If an account exists with this email, a 6-digit verification code was sent.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to request password reset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onReset = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters.');
+      return;
+    }
+    if (otp.trim().length !== 6) {
+      setError('Please enter the 6-digit code sent to your email.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await resetPassword({
+        email: email.trim(),
+        otp: otp.trim(),
+        password,
+      });
+      setStep('success');
+      setNotice(res.message || 'Password reset successful!');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to reset password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <Header />
+      <main className="auth-wrap">
+        <div className="auth-aside">
+          <span className="eyebrow">ACCOUNT RECOVERY</span>
+          <h1>
+            Secure access
+            <br />
+            <em>to your care space.</em>
+          </h1>
+          <p>
+            We’ll send a one-time 6-digit code to your registered email to help you safely reset
+            your password.
+          </p>
+          <div className="auth-aside-note">
+            <ShieldCheck size={18} />
+            <span>
+              <b>Private &amp; secure</b>
+              <small>Verification codes expire in 15 minutes.</small>
+            </span>
+          </div>
+        </div>
+        <div className="auth-card">
+          <span className="eyebrow">PASSWORD RESET</span>
+          {step === 'request' && (
+            <>
+              <h2>Reset your password</h2>
+              <p>Enter your email address and we’ll send you a 6-digit verification code.</p>
+              <form onSubmit={onRequest} className="form-stack">
+                <label>
+                  Email address
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                  />
+                </label>
+                {error && (
+                  <div role="alert" className="form-error">
+                    {error}
+                  </div>
+                )}
+                <button
+                  className="btn btn-primary btn-full"
+                  type="submit"
+                  disabled={loading || !email.trim()}
+                >
+                  {loading ? 'Sending code…' : 'Send verification code'} <ArrowRight size={16} />
+                </button>
+              </form>
+              <p className="auth-switch">
+                Remember your password? <Link to="/login">Sign in</Link>
+              </p>
+            </>
+          )}
+
+          {step === 'verify' && (
+            <>
+              <h2>Enter verification code</h2>
+              <p>
+                We sent a 6-digit code to <strong>{email}</strong>.
+              </p>
+              {notice && (
+                <p className="inline-notice" role="status">
+                  {notice}
+                </p>
+              )}
+              <form onSubmit={onReset} className="form-stack">
+                <label>
+                  6-digit code
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="123456"
+                    required
+                    maxLength={6}
+                    style={{ letterSpacing: '4px', fontSize: '1.25rem', textAlign: 'center' }}
+                  />
+                  <small className="field-hint">Check your inbox and spam folder.</small>
+                </label>
+                <label>
+                  New password
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={12}
+                    placeholder="At least 12 characters"
+                    autoComplete="new-password"
+                  />
+                  <small className="field-hint">Must be at least 12 characters.</small>
+                </label>
+                <label>
+                  Confirm new password
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={12}
+                    placeholder="Repeat new password"
+                    autoComplete="new-password"
+                  />
+                </label>
+                {error && (
+                  <div role="alert" className="form-error">
+                    {error}
+                  </div>
+                )}
+                <button
+                  className="btn btn-primary btn-full"
+                  type="submit"
+                  disabled={loading || otp.length !== 6 || password.length < 12}
+                >
+                  {loading ? 'Resetting password…' : 'Update password'} <Check size={16} />
+                </button>
+              </form>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginTop: '1rem',
+                  fontSize: '0.875rem',
+                }}
+              >
+                <button type="button" className="text-button" onClick={() => setStep('request')}>
+                  ← Change email
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={onRequest}
+                  disabled={loading}
+                >
+                  Resend code
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 'success' && (
+            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  padding: '1rem',
+                  borderRadius: '50%',
+                  backgroundColor: '#eef5f1',
+                  color: '#1e3d34',
+                  marginBottom: '1rem',
+                }}
+              >
+                <Check size={32} />
+              </div>
+              <h2>Password updated!</h2>
+              <p>
+                Your password has been reset successfully. You can now sign in with your new
+                credentials.
+              </p>
+              <div style={{ marginTop: '1.5rem' }}>
+                <Link to="/login" className="btn btn-primary btn-full">
+                  Sign in to your care space <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 function ChatPage() {
   const { id: routeId } = useParams();
   const [conversationId, setConversationId] = useState<string | undefined>(routeId);
@@ -3177,6 +3433,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/privacy" element={<PublicPrivacy />} />
       <Route
         path="/profile"
