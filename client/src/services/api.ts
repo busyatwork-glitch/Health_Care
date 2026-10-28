@@ -1,6 +1,6 @@
 import type { Assessment } from '@care-kind/shared';
-const apiOrigin = `${window.location.protocol}//${window.location.hostname}:4000`;
-const base = import.meta.env.VITE_API_URL ?? `${apiOrigin}/api`;
+const apiOrigin = typeof window !== 'undefined' && import.meta.env.DEV ? `${window.location.protocol}//${window.location.hostname}:4000` : '';
+const base = import.meta.env.VITE_API_URL || `${apiOrigin}/api`;
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${base}${path}`, { ...init, credentials: 'include', headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers } });
