@@ -52,6 +52,7 @@ export function healthStatus() {
       service: 'care-kind-api',
       database: connected ? 'connected' : 'disconnected',
       ai: env.GEMINI_API_KEY ? 'configured' : 'not configured',
+      email: env.SMTP_USER && env.SMTP_PASS ? 'configured' : 'not configured',
     },
   };
 }

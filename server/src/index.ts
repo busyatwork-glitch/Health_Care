@@ -3,7 +3,7 @@ import { env } from './config/env.js';
 import { database } from './db.js';
 
 async function main(): Promise<void> {
-  const server = app.listen(env.PORT, '0.0.0.0', () =>
+  const server = app.listen(env.PORT, '0.0.0.0', () => {
     console.log(
       JSON.stringify({
         level: 'info',
@@ -11,8 +11,18 @@ async function main(): Promise<void> {
         port: env.PORT,
         environment: env.NODE_ENV,
       }),
-    ),
-  );
+    );
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        event: 'email_service_status',
+        configured: Boolean(env.SMTP_USER && env.SMTP_PASS),
+        smtp_user_present: Boolean(env.SMTP_USER),
+        smtp_pass_present: Boolean(env.SMTP_PASS),
+        smtp_host: env.SMTP_HOST || 'smtp.gmail.com',
+      }),
+    );
+  });
   const shutdown = (signal: string) => {
     console.log(JSON.stringify({ level: 'info', event: 'shutdown', signal }));
     server.close(() => {
