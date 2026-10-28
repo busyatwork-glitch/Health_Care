@@ -21,7 +21,7 @@ const schema = z.object({
   JWT_SECRET: z.string().optional(),
   JWT_REFRESH_SECRET: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
+  GEMINI_MODEL: z.string().default('gemini-flash-latest'),
   GEMINI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(60000),
   COOKIE_SECURE: z.string().default('false').transform((v) => v === 'true'),
   SEED_ADMIN_EMAIL: z.string().email().default('admin@example.test'),
