@@ -236,9 +236,15 @@ authRouter.post(
     } catch (err) {
       console.error('[PASSWORD RESET ERROR]', err);
       const detail = err instanceof Error ? err.message : 'Unknown error';
+      const isRender = !!process.env.RENDER;
+      let hint = '';
+      if (detail.toLowerCase().includes('timeout') && isRender) {
+        hint =
+          ' (Render free tier blocks SMTP ports 25/465/587. Configure EMAILJS or RESEND_API_KEY in Render to send emails via HTTPS)';
+      }
       res.json({
         ok: true,
-        message: `Gmail SMTP notice: ${detail}. Your 6-digit verification code is: ${otp}`,
+        message: `Email delivery notice: ${detail}${hint}. For testing, your 6-digit verification code is: ${otp}`,
         otp,
       });
       return;

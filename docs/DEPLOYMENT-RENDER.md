@@ -85,6 +85,12 @@ If you prefer configuring the Web Service manually:
 | `GEMINI_MODEL`       | `gemini-3.8-flash`        | Gemini model name                  |
 | `JWT_SECRET`         | _(Random 32+ characters)_ | Secret for auth tokens             |
 | `JWT_REFRESH_SECRET` | _(Random 32+ characters)_ | Secret for refresh tokens          |
+| `RESEND_API_KEY`     | `re_...` (Recommended)    | Free Resend API key for OTP emails (Render Free tier blocks SMTP ports 25/465/587) |
+| `RESEND_FROM`        | `Carekind <onboarding@resend.dev>` | From address for Resend emails |
+
+> [!NOTE]
+> **Email Delivery on Render Free Tier**:
+> Render's free tier blocks outbound traffic on SMTP ports `25`, `465`, and `587`. If you configure Gmail SMTP on a free instance, you will get a `Connection timeout` error. To send real emails without upgrading to a paid Render plan, sign up for free at [resend.com](https://resend.com) (3,000 free emails/month) and set the `RESEND_API_KEY` environment variable. Resend uses standard HTTPS (port 443), which Render never blocks.
 
 6. Click **Create Web Service**.
 

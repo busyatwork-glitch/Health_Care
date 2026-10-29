@@ -41,6 +41,12 @@ const schema = z.object({
   SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_PASS: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   SMTP_FROM: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  RESEND_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  RESEND_FROM: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  EMAILJS_SERVICE_ID: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  EMAILJS_TEMPLATE_ID: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  EMAILJS_PUBLIC_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  EMAILJS_PRIVATE_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
 });
 const configured = schema.parse(process.env);
 // Appointment working hours are interpreted in one configured clinic timezone; database dates remain UTC.
@@ -69,6 +75,12 @@ const rawSmtpPass =
 const rawSmtpHost = process.env.SMTP_HOST || process.env.EMAIL_HOST || process.env.MAIL_HOST;
 const rawSmtpPort = process.env.SMTP_PORT || process.env.EMAIL_PORT || process.env.MAIL_PORT;
 const rawSmtpFrom = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.MAIL_FROM;
+const rawResendApiKey = process.env.RESEND_API_KEY || process.env.RESEND_KEY;
+const rawResendFrom = process.env.RESEND_FROM;
+const rawEmailJsServiceId = process.env.EMAILJS_SERVICE_ID;
+const rawEmailJsTemplateId = process.env.EMAILJS_TEMPLATE_ID;
+const rawEmailJsPublicKey = process.env.EMAILJS_PUBLIC_KEY || process.env.EMAILJS_USER_ID;
+const rawEmailJsPrivateKey = process.env.EMAILJS_PRIVATE_KEY || process.env.EMAILJS_ACCESS_TOKEN;
 
 export const env = {
   ...configured,
@@ -79,4 +91,10 @@ export const env = {
   SMTP_HOST: configured.SMTP_HOST || rawSmtpHost,
   SMTP_PORT: configured.SMTP_PORT || (rawSmtpPort ? Number(rawSmtpPort) : 465),
   SMTP_FROM: configured.SMTP_FROM || rawSmtpFrom,
+  RESEND_API_KEY: configured.RESEND_API_KEY || rawResendApiKey,
+  RESEND_FROM: configured.RESEND_FROM || rawResendFrom,
+  EMAILJS_SERVICE_ID: configured.EMAILJS_SERVICE_ID || rawEmailJsServiceId,
+  EMAILJS_TEMPLATE_ID: configured.EMAILJS_TEMPLATE_ID || rawEmailJsTemplateId,
+  EMAILJS_PUBLIC_KEY: configured.EMAILJS_PUBLIC_KEY || rawEmailJsPublicKey,
+  EMAILJS_PRIVATE_KEY: configured.EMAILJS_PRIVATE_KEY || rawEmailJsPrivateKey,
 };
