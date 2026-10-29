@@ -141,6 +141,8 @@ apiRouter.get(
     const limit = 12;
     const parts = [
       "(d.verification = 'approved' or (d.verification = 'pending' and d.demo = false and d.city <> 'Demo City'))",
+      "d.verification <> 'suspended'",
+      "u.suspended is false",
     ];
     const values: Array<string | number> = [];
     if (typeof req.query.specialty === 'string')
@@ -202,7 +204,7 @@ apiRouter.get(
   asyncRoute(async (req, res) => {
     const doctorId = id(String(req.params.id));
     const [doctor] =
-      await db()`select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.id=${doctorId}::uuid and (d.verification='approved' or (d.verification='pending' and d.demo=false and d.city<>'Demo City'))`;
+      await db()`select d.*, jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.id=${doctorId}::uuid and (d.verification='approved' or (d.verification='pending' and d.demo=false and d.city<>'Demo City')) and d.verification<>'suspended' and u.suspended is false`;
     if (!doctor) throw new ApiError(404, 'Doctor not found');
     const reviews =
       await db()`select r.*, jsonb_build_object('id',u.id,'name',u.name) as patient from public.reviews r join public.users u on u.id=r.patient_id where r.doctor_id=${doctorId}::uuid and r.moderated=false order by r.created_at desc limit 20`;
@@ -262,6 +264,7 @@ apiRouter.get(
     const limit = 12;
     const parts: string[] = [
       "(verification = 'approved' or verification is null or (verification = 'pending' and demo = false))",
+      "verification <> 'suspended'",
     ];
     const values: Array<string | number> = [];
     if (typeof req.query.city === 'string')
@@ -303,10 +306,10 @@ apiRouter.get(
   '/hospitals/:id',
   asyncRoute(async (req, res) => {
     const [hospital] =
-      await db()`select * from public.hospitals where id=${id(String(req.params.id))}::uuid and (verification = 'approved' or verification is null or (verification = 'pending' and demo = false))`;
+      await db()`select * from public.hospitals where id=${id(String(req.params.id))}::uuid and (verification = 'approved' or verification is null or (verification = 'pending' and demo = false)) and verification <> 'suspended'`;
     if (!hospital) throw new ApiError(404, 'Hospital not found');
     const doctors =
-      await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification='approved' and d.specialty=any(${hospital.specialties}::text[])`;
+      await db()`select d.*,jsonb_build_object('id',u.id,'name',u.name) as user from public.doctor_profiles d join public.users u on u.id=d.user_id where d.verification='approved' and u.suspended is false and d.specialty=any(${hospital.specialties}::text[])`;
     res.json({ hospital: toApi(hospital), doctors: apiRows(doctors) });
   }),
 );
@@ -805,6 +808,10 @@ apiRouter.patch(
     const [doctor] =
       await db()`update public.doctor_profiles set verification=${verification},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;
     if (!doctor) throw new ApiError(404, 'Doctor not found');
+    if (doctor.user_id) {
+      const isSuspended = verification === 'suspended' || verification === 'rejected';
+      await db()`update public.users set suspended=${isSuspended},updated_at=now() where id=${doctor.user_id}::uuid`;
+    }
     await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${`doctor.${verification}`},'doctor',${String(doctor.id)})`;
     res.json({ doctor: toApi(doctor) });
   }),
@@ -831,6 +838,10 @@ apiRouter.patch(
     const [hospital] =
       await db()`update public.hospitals set verification=${verification},updated_at=now() where id=${id(String(req.params.id))}::uuid returning *`;
     if (!hospital) throw new ApiError(404, 'Hospital not found');
+    if (hospital.user_id) {
+      const isSuspended = verification === 'suspended' || verification === 'rejected';
+      await db()`update public.users set suspended=${isSuspended},updated_at=now() where id=${hospital.user_id}::uuid`;
+    }
     await db()`insert into public.audit_logs(actor,action,target_type,target_id) values(${req.user!.id}::uuid,${`hospital.${verification}`},'hospital',${String(hospital.id)})`;
     res.json({ hospital: toApi(hospital) });
   }),

@@ -109,3 +109,11 @@ export async function resetPassword(payload: {
     body: JSON.stringify(payload),
   });
 }
+export async function deactivateAccount(
+  reason?: string,
+): Promise<{ ok: boolean; message: string }> {
+  return request('/auth/deactivate', {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}

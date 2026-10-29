@@ -2811,3 +2811,86 @@ p {
 .role-switch {
   grid-template-columns: repeat(3, 1fr) !important;
 }
+
+.btn-danger {
+  background: #c84b31;
+  color: white;
+  border-color: #c84b31;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #a63a24;
+  border-color: #a63a24;
+}
+.btn-danger-outline {
+  background: transparent;
+  color: #c84b31;
+  border-color: #e8b4a8;
+}
+.btn-danger-outline:hover:not(:disabled) {
+  background: #fdf2f0;
+  border-color: #c84b31;
+}
+
+.danger-zone-card {
+  margin-top: 32px;
+  background: #fff;
+  border: 1px solid #f2cac2;
+  border-radius: 12px;
+  padding: 24px;
+}
+.danger-zone-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #c84b31;
+  margin-bottom: 12px;
+}
+.danger-zone-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #b0351e;
+}
+.danger-zone-copy {
+  color: #555e56;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin-bottom: 16px;
+}
+.danger-zone-copy ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+.danger-zone-copy li {
+  margin-bottom: 4px;
+}
+.danger-zone-form {
+  background: #fff7f5;
+  border: 1px solid #fedcd5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 14px;
+}
+.danger-zone-form label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4a524b;
+  margin-bottom: 12px;
+}
+.danger-zone-form textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dfc7c2;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  margin-top: 6px;
+  resize: vertical;
+}
+.danger-zone-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+

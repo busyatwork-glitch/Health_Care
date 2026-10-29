@@ -94,10 +94,24 @@ authRouter.post(
     if (
       !user ||
       !user.password_hash ||
-      !(await argon2.verify(user.password_hash, password)) ||
-      user.suspended
+      !(await argon2.verify(user.password_hash, password))
     )
       throw new ApiError(401, 'Email or password is incorrect');
+    if (user.suspended) {
+      if (user.role === 'doctor') {
+        throw new ApiError(
+          403,
+          'Your doctor practice account has been deactivated. Please contact an administrator or support to reactivate your practice.',
+        );
+      }
+      if (user.role === 'hospital') {
+        throw new ApiError(
+          403,
+          'Your hospital account has been deactivated. Please contact an administrator or support to reactivate your organization profile.',
+        );
+      }
+      throw new ApiError(403, 'This account has been deactivated. Please contact support.');
+    }
     issueAccess(res, user);
     await rotateRefresh(res, user.id);
     res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
@@ -173,16 +187,86 @@ authRouter.patch(
   }),
 );
 
+const deactivateAccountSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
+authRouter.post(
+  '/deactivate',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const input = deactivateAccountSchema.parse(req.body ?? {});
+    const userId = req.user!.id;
+    const role = req.user!.role;
+
+    await db().begin(async (transaction) => {
+      if (role === 'doctor') {
+        const [doctor] =
+          await transaction`select id from public.doctor_profiles where user_id = ${userId}::uuid limit 1`;
+        if (doctor) {
+          const reasonText = input.reason
+            ? `Doctor practice deactivated: ${input.reason}`
+            : 'Doctor practice deactivated';
+          await transaction`update public.appointments 
+            set status = 'cancelled', 
+                cancel_reason = ${reasonText}, 
+                updated_at = now() 
+            where doctor_id = ${doctor.id}::uuid and status in ('pending', 'confirmed')`;
+          await transaction`update public.doctor_profiles 
+            set verification = 'suspended', updated_at = now() 
+            where id = ${doctor.id}::uuid`;
+        }
+      } else if (role === 'hospital') {
+        await transaction`update public.hospitals 
+          set verification = 'suspended', updated_at = now() 
+          where user_id = ${userId}::uuid`;
+      } else if (role === 'patient') {
+        const reasonText = input.reason
+          ? `Patient account deactivated: ${input.reason}`
+          : 'Patient account deactivated';
+        await transaction`update public.appointments 
+          set status = 'cancelled', 
+              cancel_reason = ${reasonText}, 
+              updated_at = now() 
+          where patient_id = ${userId}::uuid and status in ('pending', 'confirmed')`;
+      }
+
+      await transaction`update public.users set suspended = true, updated_at = now() where id = ${userId}::uuid`;
+      await transaction`delete from public.refresh_sessions where user_id = ${userId}::uuid`;
+    });
+
+    res.clearCookie('accessToken', { ...accessCookie, maxAge: undefined });
+    res.clearCookie('refreshToken', { ...refreshCookie, maxAge: undefined });
+    res.json({
+      ok: true,
+      message:
+        role === 'doctor'
+          ? 'Doctor practice account has been deactivated successfully.'
+          : role === 'hospital'
+            ? 'Hospital organization account has been deactivated successfully.'
+            : 'Account has been deactivated successfully.',
+    });
+  }),
+);
+
 authRouter.delete(
   '/account',
   requireAuth,
   asyncRoute(async (req, res) => {
     await db().begin(async (transaction) => {
-      await transaction`update public.appointments set status='cancelled', cancel_reason='Account deleted', updated_at=now() where patient_id=${req.user!.id}::uuid and status in ('pending','confirmed')`;
+      if (req.user!.role === 'doctor') {
+        const [doc] =
+          await transaction`select id from public.doctor_profiles where user_id = ${req.user!.id}::uuid limit 1`;
+        if (doc) {
+          await transaction`update public.appointments set status='cancelled', cancel_reason='Doctor account deleted', updated_at=now() where doctor_id=${doc.id}::uuid and status in ('pending','confirmed')`;
+        }
+      } else {
+        await transaction`update public.appointments set status='cancelled', cancel_reason='Account deleted', updated_at=now() where patient_id=${req.user!.id}::uuid and status in ('pending','confirmed')`;
+      }
       await transaction`delete from public.users where id = ${req.user!.id}::uuid`;
     });
-    res.clearCookie('accessToken', accessCookie);
-    res.clearCookie('refreshToken', refreshCookie);
+    res.clearCookie('accessToken', { ...accessCookie, maxAge: undefined });
+    res.clearCookie('refreshToken', { ...refreshCookie, maxAge: undefined });
     res.json({ ok: true });
   }),
 );

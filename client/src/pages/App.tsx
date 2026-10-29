@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import {
   Activity,
+  AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
@@ -39,6 +40,7 @@ import {
   chat,
   forgotPassword,
   resetPassword,
+  deactivateAccount,
   type ChatResult,
   type DoctorCard,
   type HospitalCard,
@@ -2395,6 +2397,145 @@ function SavedPage() {
     </>
   );
 }
+
+function DeactivateAccountCard({ role }: { role: 'doctor' | 'hospital' | 'patient' }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDeactivate = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await deactivateAccount(reason.trim() || undefined);
+      await queryClient.clear();
+      navigate('/login', {
+        state: {
+          notice:
+            role === 'doctor'
+              ? 'Your doctor practice account has been deactivated.'
+              : role === 'hospital'
+                ? 'Your hospital organization account has been deactivated.'
+                : 'Your account has been deactivated.',
+        },
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not deactivate account. Please try again.',
+      );
+      setLoading(false);
+    }
+  };
+
+  const title =
+    role === 'doctor'
+      ? 'Deactivate Doctor Practice'
+      : role === 'hospital'
+        ? 'Deactivate Hospital Organization'
+        : 'Deactivate Account';
+
+  return (
+    <section className="danger-zone-card" aria-label="Danger Zone">
+      <div className="danger-zone-header">
+        <AlertTriangle size={20} />
+        <h3>Danger Zone: {title}</h3>
+      </div>
+      <div className="danger-zone-copy">
+        {role === 'doctor' && (
+          <>
+            <p>Deactivating your doctor practice will immediately:</p>
+            <ul>
+              <li>Hide your doctor profile and booking slots from patient search and the directory.</li>
+              <li>Cancel all upcoming pending and confirmed patient appointments.</li>
+              <li>Sign you out of your account on all devices.</li>
+            </ul>
+          </>
+        )}
+        {role === 'hospital' && (
+          <>
+            <p>Deactivating your hospital account will immediately:</p>
+            <ul>
+              <li>Hide your hospital profile, departments, and facilities from the public directory.</li>
+              <li>Prevent patients and doctors from discovering or linking to your hospital.</li>
+              <li>Sign you out of your account on all devices.</li>
+            </ul>
+          </>
+        )}
+        {role === 'patient' && (
+          <p>
+            Deactivating your account will cancel any pending appointments and immediately sign you out.
+          </p>
+        )}
+      </div>
+
+      {error && (
+        <div role="alert" className="form-error" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {!isOpen ? (
+        <button
+          type="button"
+          className="btn btn-danger-outline"
+          onClick={() => setIsOpen(true)}
+        >
+          {role === 'doctor'
+            ? 'Deactivate practice…'
+            : role === 'hospital'
+              ? 'Deactivate hospital…'
+              : 'Deactivate account…'}
+        </button>
+      ) : (
+        <div className="danger-zone-form">
+          <label>
+            Reason for deactivation (optional)
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={
+                role === 'doctor'
+                  ? 'e.g. Taking leave, retiring, relocation, or practice changes...'
+                  : role === 'hospital'
+                    ? 'e.g. System maintenance, restructuring, or facility updates...'
+                    : 'Tell us why you are deactivating (optional)...'
+              }
+              rows={2}
+            />
+          </label>
+          <p style={{ fontSize: '0.82rem', color: '#8a2b16', margin: '4px 0 12px 0' }}>
+            Are you sure? To reactivate in the future, you will need to contact an administrator.
+          </p>
+          <div className="danger-zone-actions">
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={loading}
+              onClick={() => void handleDeactivate()}
+            >
+              {loading ? 'Deactivating…' : 'Yes, deactivate now'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={loading}
+              onClick={() => {
+                setIsOpen(false);
+                setError('');
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DoctorPortal({ tab }: { tab: 'home' | 'appointments' | 'profile' }) {
   const queryClient = useQueryClient();
   const { data: meData } = useQuery({ queryKey: ['session'], queryFn: me });
@@ -2520,78 +2661,81 @@ function DoctorPortal({ tab }: { tab: 'home' | 'appointments' | 'profile' }) {
         </p>
       )}
       {tab === 'profile' ? (
-        <div className="doctor-manage-grid">
-          <form className="booking-panel form-stack" onSubmit={saveProfile}>
-            <h2>Profile details</h2>
-            <label>
-              Specialty
-              <input
-                value={specialty}
-                onChange={(e) => setSpecialty(e.target.value)}
-                placeholder="Your specialty"
-              />
-            </label>
-            <label>
-              City or locality
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Your location"
-              />
-            </label>
-            <label>
-              Consultation fee
-              <input type="number" value={fee} onChange={(e) => setFee(e.target.value)} min="0" />
-            </label>
-            <button className="btn btn-primary">Save profile</button>
-          </form>
-          <div className="booking-panel form-stack">
-            <h2>Working hours</h2>
-            <label>
-              Working days <small>(0 Sunday – 6 Saturday)</small>
-              <input
-                value={days}
-                onChange={(e) => setDays(e.target.value)}
-                placeholder="1,2,3,4,5"
-              />
-            </label>
-            <div className="form-row">
+        <>
+          <div className="doctor-manage-grid">
+            <form className="booking-panel form-stack" onSubmit={saveProfile}>
+              <h2>Profile details</h2>
               <label>
-                Start hour
+                Specialty
                 <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  placeholder="Your specialty"
                 />
               </label>
               <label>
-                End hour
+                City or locality
                 <input
-                  type="number"
-                  min="1"
-                  max="24"
-                  value={end}
-                  onChange={(e) => setEnd(e.target.value)}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Your location"
                 />
               </label>
+              <label>
+                Consultation fee
+                <input type="number" value={fee} onChange={(e) => setFee(e.target.value)} min="0" />
+              </label>
+              <button className="btn btn-primary">Save profile</button>
+            </form>
+            <div className="booking-panel form-stack">
+              <h2>Working hours</h2>
+              <label>
+                Working days <small>(0 Sunday – 6 Saturday)</small>
+                <input
+                  value={days}
+                  onChange={(e) => setDays(e.target.value)}
+                  placeholder="1,2,3,4,5"
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  Start hour
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                  />
+                </label>
+                <label>
+                  End hour
+                  <input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                  />
+                </label>
+              </div>
+              <label>
+                Slot length (minutes)
+                <input
+                  type="number"
+                  min="15"
+                  max="120"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                />
+              </label>
+              <button className="btn btn-primary" onClick={() => void saveAvailability()}>
+                Save availability
+              </button>
             </div>
-            <label>
-              Slot length (minutes)
-              <input
-                type="number"
-                min="15"
-                max="120"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-              />
-            </label>
-            <button className="btn btn-primary" onClick={() => void saveAvailability()}>
-              Save availability
-            </button>
           </div>
-        </div>
+          <DeactivateAccountCard role="doctor" />
+        </>
       ) : isLoading ? (
         <p>Loading appointments…</p>
       ) : error ? (
@@ -2752,65 +2896,68 @@ function HospitalPortal({ tab }: { tab: 'home' | 'profile' }) {
         </p>
       )}
       {tab === 'profile' ? (
-        <form className="booking-panel form-stack" onSubmit={saveProfile}>
-          <h2>Organization details</h2>
-          <label>
-            Hospital or center name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. City Care General Hospital"
-              required
-            />
-          </label>
-          <div className="form-row">
+        <>
+          <form className="booking-panel form-stack" onSubmit={saveProfile}>
+            <h2>Organization details</h2>
             <label>
-              City or locality
+              Hospital or center name
               <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="e.g. Mumbai or Pune"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. City Care General Hospital"
                 required
               />
             </label>
+            <div className="form-row">
+              <label>
+                City or locality
+                <input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="e.g. Mumbai or Pune"
+                  required
+                />
+              </label>
+              <label>
+                Contact phone
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. +91 98765 43210"
+                />
+              </label>
+            </div>
             <label>
-              Contact phone
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. +91 98765 43210"
+              Overview & description
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe your hospital, departments, patient care values..."
+                rows={3}
               />
             </label>
-          </div>
-          <label>
-            Overview & description
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe your hospital, departments, patient care values..."
-              rows={3}
-            />
-          </label>
-          <label>
-            Listed specialties <small>(comma separated)</small>
-            <input
-              value={specialties}
-              onChange={(e) => setSpecialties(e.target.value)}
-              placeholder="e.g. Cardiology, Neurology, Pediatrics, Orthopedics"
-            />
-          </label>
-          <label>
-            Facilities & services <small>(comma separated)</small>
-            <input
-              value={facilities}
-              onChange={(e) => setFacilities(e.target.value)}
-              placeholder="e.g. 24/7 Emergency, ICU, Diagnostic Lab, Blood Bank"
-            />
-          </label>
-          <button className="btn btn-primary" type="submit">
-            Save hospital profile
-          </button>
-        </form>
+            <label>
+              Listed specialties <small>(comma separated)</small>
+              <input
+                value={specialties}
+                onChange={(e) => setSpecialties(e.target.value)}
+                placeholder="e.g. Cardiology, Neurology, Pediatrics, Orthopedics"
+              />
+            </label>
+            <label>
+              Facilities & services <small>(comma separated)</small>
+              <input
+                value={facilities}
+                onChange={(e) => setFacilities(e.target.value)}
+                placeholder="e.g. 24/7 Emergency, ICU, Diagnostic Lab, Blood Bank"
+              />
+            </label>
+            <button className="btn btn-primary" type="submit">
+              Save hospital profile
+            </button>
+          </form>
+          <DeactivateAccountCard role="hospital" />
+        </>
       ) : (
         <div className="doctor-manage-grid">
           <section className="booking-panel">
@@ -3344,14 +3491,20 @@ function SettingsPage() {
         <Link to="/privacy" className="text-link">
           Read the privacy overview <ArrowRight size={15} />
         </Link>
-        <h3 className="delete-heading">Delete your account</h3>
-        <p>
-          Account deletion removes your private conversations, summaries, saved items, reviews, and
-          account. Active appointments are cancelled before deletion.
-        </p>
-        <button className="btn btn-outline danger-outline" onClick={() => void remove()}>
-          Delete account
-        </button>
+        {user?.role === 'doctor' || user?.role === 'hospital' ? (
+          <DeactivateAccountCard role={user.role} />
+        ) : (
+          <>
+            <h3 className="delete-heading">Delete your account</h3>
+            <p>
+              Account deletion removes your private conversations, summaries, saved items, reviews, and
+              account. Active appointments are cancelled before deletion.
+            </p>
+            <button className="btn btn-outline danger-outline" onClick={() => void remove()}>
+              Delete account
+            </button>
+          </>
+        )}
       </section>
     </>
   );
